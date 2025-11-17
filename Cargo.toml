@@ -1,0 +1,12 @@
+[workspace]
+members = [
+    "moi-core",
+    "moi-solver-api",
+    "moi-model",
+    "moi-expr",
+    "moi-bridge",
+    "moi-cache",
+    "moi-nlp",
+    "moi-utils",
+]
+resolver = "2"

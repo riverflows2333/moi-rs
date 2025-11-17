@@ -1,0 +1,1 @@
+//! Bridge framework (placeholder)

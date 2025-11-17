@@ -1,0 +1,7 @@
+[package]
+name = "moi-solver-api"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+moi-core = { path = "../moi-core" }
