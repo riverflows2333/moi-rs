@@ -2,6 +2,7 @@ use moi_core::errors::MoiError;
 use moi_core::indices::{ConstrId, VarId};
 use moi_core::traits::{Function, Set};
 use moi_core::attributes::Attribute;
+use moi_core::functions::AffineFn;
 
 pub trait ModelLike {
     fn add_variable(&mut self) -> VarId;
@@ -22,6 +23,10 @@ pub trait ModelLike {
 
     fn is_empty(&self) -> bool;
     fn empty(&mut self);
+
+    // Objective (MVP: Affine only)
+    fn set_objective_affine(&mut self, f: AffineFn) -> Result<(), MoiError>;
+    fn get_objective_affine(&self) -> Option<&AffineFn>;
 }
 
 pub trait Optimizer: ModelLike {

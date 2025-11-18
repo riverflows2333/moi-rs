@@ -11,5 +11,11 @@ fn main() {
     let set = moi_core::sets::GreaterThan::new(1.0);
     let _cid = model.add_constraint(f, set);
 
+    // set objective: minimize x + 2y
+    let mut obj = moi_core::functions::AffineFn::default();
+    obj.push_term(vars[0], 1.0);
+    obj.push_term(vars[1], 2.0);
+    model.set_objective_affine(obj).unwrap();
+
     println!("example constructed OK");
 }

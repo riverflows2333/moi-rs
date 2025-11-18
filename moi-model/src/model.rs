@@ -1,7 +1,7 @@
+use moi_core::attributes::Attribute;
 use moi_core::errors::MoiError;
 use moi_core::indices::{ConstrId, VarId};
 use moi_core::traits::{Function, Set};
-use moi_core::attributes::Attribute;
 use moi_solver_api::{ModelLike, Optimizer};
 use std::any::Any;
 use std::collections::HashMap;
@@ -14,6 +14,7 @@ pub struct Model {
     num_vars: usize,
     num_constr: usize,
     attrs: HashMap<&'static str, Box<dyn Any>>,
+    objective: Option<AffineFn>,
 }
 
 impl ModelLike for Model {
@@ -58,8 +59,7 @@ impl ModelLike for Model {
 
     fn get_attr<A: Attribute>(&self, _key: &A) -> Option<A::Value> {
         let key = core::any::type_name::<A>();
-        self
-            .attrs
+        self.attrs
             .get(key)
             .and_then(|b| b.downcast_ref::<A::Value>().cloned())
     }
@@ -77,6 +77,16 @@ impl ModelLike for Model {
     fn empty(&mut self) {
         self.num_vars = 0;
         self.num_constr = 0;
+        self.objective = None;
+    }
+
+    fn set_objective_affine(&mut self, f: AffineFn) -> Result<(), MoiError> {
+        self.set_objective_internal(f);
+        Ok(())
+    }
+
+    fn get_objective_affine(&self) -> Option<&AffineFn> {
+        self.objective.as_ref()
     }
 }
 
@@ -91,3 +101,12 @@ impl Optimizer for Model {
         Ok(())
     }
 }
+
+impl Model {
+    fn set_objective_internal(&mut self, mut f: AffineFn) {
+        f.simplify();
+        self.objective = Some(f);
+    }
+}
+
+// move implementations into the existing ModelLike impl above
