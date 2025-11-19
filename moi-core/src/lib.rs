@@ -4,7 +4,8 @@ pub mod traits;
 pub mod sets;
 pub mod functions;
 pub mod attributes;
-pub mod model_types;
+pub mod variable;
+pub mod constraint;
 
 pub use indices::*;
 pub use errors::*;
@@ -12,4 +13,5 @@ pub use traits::*;
 pub use sets::*;
 pub use functions::*;
 pub use attributes::*;
-pub use model_types::*;
+pub use variable::*;
+pub use constraint::*;

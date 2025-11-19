@@ -1,5 +1,6 @@
 use moi_model::Model;
 use moi_core::functions::AffineFn;
+use moi_core::sets::GreaterThan;
 use moi_solver_api::ModelLike;
 
 #[test]
@@ -14,15 +15,13 @@ fn variables_and_names_are_stored() {
 }
 
 #[test]
-fn affine_constraints_are_stored() {
+fn add_constraint_returns_increasing_ids() {
     let mut m = Model::default();
     let v = m.add_variable();
     let mut f = AffineFn::default();
     f.push_term(v, 2.0);
-    let cid = m.add_affine_bound(f, moi_model::AffineSetKind::Ge(1.0));
-    let c = m.get_affine_constraint(cid.raw()).unwrap();
-    match c.set {
-        moi_model::AffineSetKind::Ge(l) => assert_eq!(l, 1.0),
-        _ => panic!("expected Ge set"),
-    }
+    let c1 = m.add_constraint(f.clone(), GreaterThan::new(1.0));
+    let c2 = m.add_constraint(f, GreaterThan::new(2.0));
+    assert_eq!(c1.raw(), 0);
+    assert_eq!(c2.raw(), 1);
 }

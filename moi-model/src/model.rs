@@ -8,7 +8,7 @@ use moi_solver_api::{ModelLike, Optimizer};
 use std::any::Any;
 use std::collections::HashMap;
 
-use moi_core::model_types::{AffineConstraint, AffineSetKind, Variable};
+use moi_core::variable::Variable;
 
 #[derive(Default)]
 pub struct Model {
@@ -19,7 +19,6 @@ pub struct Model {
     // storage
     name: String,
     variables: Vec<Variable>,
-    affine_constraints: Vec<AffineConstraint>,
     var_to_name: HashMap<usize, String>,
     name_to_var: HashMap<String, VarId>,
     con_to_name: HashMap<usize, String>,
@@ -89,7 +88,6 @@ impl ModelLike for Model {
         self.num_constr = 0;
         self.objective = None;
         self.variables.clear();
-        self.affine_constraints.clear();
         self.var_to_name.clear();
         self.name_to_var.clear();
         self.con_to_name.clear();
@@ -144,38 +142,8 @@ impl Model {
         self.name_to_var.get(name).copied()
     }
 
-    pub fn add_affine_bound(
-        &mut self,
-        mut f: AffineFn,
-        bound: AffineSetKind,
-    ) -> ConstrId<AffineFn, Interval> {
-        f.simplify();
-        let id = self.num_constr;
-        self.num_constr += 1;
-        self.affine_constraints.push(AffineConstraint {
-            id,
-            func: f.clone(),
-            set: bound.clone(),
-        });
-        // for a canonical ConstrId type parameterization, map to Interval variant
-        match bound {
-            AffineSetKind::Ge(l) => Interval {
-                lower: l,
-                upper: f64::INFINITY,
-            },
-            AffineSetKind::Le(u) => Interval {
-                lower: f64::NEG_INFINITY,
-                upper: u,
-            },
-            AffineSetKind::Eq(v) => Interval { lower: v, upper: v },
-            AffineSetKind::Interval { lower, upper } => Interval { lower, upper },
-        };
-        ConstrId::new(id)
-    }
+    // constraint naming APIs could be added later using con_to_name/name_to_con
 
-    pub fn get_affine_constraint(&self, id: usize) -> Option<&AffineConstraint> {
-        self.affine_constraints.iter().find(|c| c.id == id)
-    }
 }
 
 // move implementations into the existing ModelLike impl above
