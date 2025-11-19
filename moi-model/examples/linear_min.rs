@@ -8,8 +8,10 @@ fn main() {
     f.push_term(vars[0], 1.0);
     f.push_term(vars[1], 2.0);
 
-    let set = moi_core::sets::GreaterThan::new(1.0);
-    let _cid = model.add_constraint(f, set);
+    let _cid = model.add_constraint(
+        moi_core::functions::FunctionType::Affine(f),
+        moi_core::sets::ScalarSetType::GreaterThan(1.0),
+    );
 
     // set objective: minimize x + 2y
     let mut obj = moi_core::functions::AffineFn::default();

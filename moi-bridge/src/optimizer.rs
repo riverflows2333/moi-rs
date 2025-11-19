@@ -1,9 +1,8 @@
 use moi_core::attributes::Attribute;
 use moi_core::errors::MoiError;
-use moi_core::functions::AffineFn;
+use moi_core::functions::{AffineFn, FunctionType};
 use moi_core::indices::{ConstrId, VarId};
-use moi_core::sets::{EqualTo, GreaterThan, Interval, LessThan};
-use moi_core::traits::{Function, Set};
+use moi_core::sets::ScalarSetType;
 use moi_solver_api::{ModelLike, Optimizer, SolveStatus};
 
 /// BridgeOptimizer wraps an inner optimizer and attempts to bridge unsupported
@@ -27,29 +26,20 @@ impl<O> BridgeOptimizer<O> {
     }
 }
 
-/// A small enum to express scalar bound sets for explicit bridging API.
-#[derive(Clone)]
+/// 表达单侧或等式标量约束，用于桥接到区间形式。
+#[derive(Clone, Debug)]
 pub enum ScalarBoundSet {
-    Ge(GreaterThan),
-    Le(LessThan),
-    Eq(EqualTo),
+    Ge(f64),
+    Le(f64),
+    Eq(f64),
 }
 
 impl ScalarBoundSet {
-    fn to_interval(&self) -> Interval {
+    fn to_interval(&self) -> (f64, f64) {
         match self {
-            ScalarBoundSet::Ge(ge) => Interval {
-                lower: ge.lower,
-                upper: f64::INFINITY,
-            },
-            ScalarBoundSet::Le(le) => Interval {
-                lower: f64::NEG_INFINITY,
-                upper: le.upper,
-            },
-            ScalarBoundSet::Eq(eq) => Interval {
-                lower: eq.value,
-                upper: eq.value,
-            },
+            ScalarBoundSet::Ge(l) => (*l, f64::INFINITY),
+            ScalarBoundSet::Le(u) => (f64::NEG_INFINITY, *u),
+            ScalarBoundSet::Eq(v) => (*v, *v),
         }
     }
 }
@@ -59,49 +49,29 @@ where
     O: ModelLike,
 {
     /// Explicit API: add an affine scalar-bound constraint, bridging to Interval if needed.
-    pub fn add_affine_bound(
-        &mut self,
-        f: AffineFn,
-        b: ScalarBoundSet,
-    ) -> ConstrId<AffineFn, Interval> {
-        // If inner supports Interval, convert directly
-        if self.inner.supports_constraint::<AffineFn, Interval>() {
-            let set = b.to_interval();
-            return self.inner.add_constraint::<AffineFn, Interval>(f, set);
-        }
-        // Fall back to native types if supported
-        match &b {
-            ScalarBoundSet::Ge(ge) => {
-                if self.inner.supports_constraint::<AffineFn, GreaterThan>() {
-                    let id = self
-                        .inner
-                        .add_constraint::<AffineFn, GreaterThan>(f, ge.clone())
-                        .raw();
-                    return ConstrId::new(id);
+    pub fn add_affine_bound(&mut self, f: AffineFn, b: ScalarBoundSet) -> ConstrId {
+        let fty = FunctionType::Affine(f);
+        let (l, u) = b.to_interval();
+        // 优先尝试模型自身支持的原始形式
+        match b {
+            ScalarBoundSet::Ge(val) => {
+                if self.inner.supports_constraint(&fty, &ScalarSetType::GreaterThan(val)) {
+                    return self.inner.add_constraint(fty, ScalarSetType::GreaterThan(val));
                 }
             }
-            ScalarBoundSet::Le(le) => {
-                if self.inner.supports_constraint::<AffineFn, LessThan>() {
-                    let id = self
-                        .inner
-                        .add_constraint::<AffineFn, LessThan>(f, le.clone())
-                        .raw();
-                    return ConstrId::new(id);
+            ScalarBoundSet::Le(val) => {
+                if self.inner.supports_constraint(&fty, &ScalarSetType::LessThan(val)) {
+                    return self.inner.add_constraint(fty, ScalarSetType::LessThan(val));
                 }
             }
-            ScalarBoundSet::Eq(eq) => {
-                if self.inner.supports_constraint::<AffineFn, EqualTo>() {
-                    let id = self
-                        .inner
-                        .add_constraint::<AffineFn, EqualTo>(f, eq.clone())
-                        .raw();
-                    return ConstrId::new(id);
+            ScalarBoundSet::Eq(val) => {
+                if self.inner.supports_constraint(&fty, &ScalarSetType::EqualTo(val)) {
+                    return self.inner.add_constraint(fty, ScalarSetType::EqualTo(val));
                 }
             }
         }
-        // Last resort: map to Interval regardless (inner may still accept)
-        let set = b.to_interval();
-        self.inner.add_constraint::<AffineFn, Interval>(f, set)
+        // 回退到区间形式
+        self.inner.add_constraint(fty, ScalarSetType::Interval(l, u))
     }
 }
 
@@ -116,27 +86,14 @@ where
         self.inner.add_variables(n)
     }
 
-    fn add_constraint<F, S>(&mut self, f: F, s: S) -> ConstrId<F, S>
-    where
-        F: Function,
-        S: Set,
-    {
+    fn add_constraint(&mut self, f: FunctionType, s: ScalarSetType) -> ConstrId {
         // MVP: by default delegate. Use explicit APIs for bridging where needed.
         self.inner.add_constraint(f, s)
     }
 
-    fn supports_constraint<F, S>(&self) -> bool
-    where
-        F: Function,
-        S: Set,
-    {
-        // If inner supports directly, true.
-        if self.inner.supports_constraint::<F, S>() {
-            return true;
-        }
-        // Otherwise check if a specialized bridge exists and its target is supported.
-        // We conservatively report false; callers can attempt add and let bridge handle.
-        false
+    fn supports_constraint(&self, f: &FunctionType, s: &ScalarSetType) -> bool {
+        // Delegate to inner; bridging capability is exposed via explicit APIs.
+        self.inner.supports_constraint(f, s)
     }
 
     fn get_attr<A: Attribute>(&self, key: &A) -> Option<A::Value> {

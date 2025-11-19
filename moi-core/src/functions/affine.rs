@@ -1,5 +1,4 @@
 use crate::indices::VarId;
-use crate::traits::Function;
 
 #[derive(Clone, Debug)]
 pub struct AffineTerm {
@@ -42,8 +41,3 @@ impl AffineFn {
     }
 }
 
-impl Function for AffineFn {
-    fn output_dim(&self) -> usize {
-        1
-    }
-}

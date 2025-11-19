@@ -1,22 +1,16 @@
-use moi_core::errors::MoiError;
-use moi_core::indices::{ConstrId, VarId};
-use moi_core::traits::{Function, Set};
 use moi_core::attributes::Attribute;
-use moi_core::functions::AffineFn;
+use moi_core::errors::MoiError;
+use moi_core::functions::{AffineFn, FunctionType};
+use moi_core::indices::{ConstrId, VarId};
+use moi_core::sets::ScalarSetType;
 
 pub trait ModelLike {
     fn add_variable(&mut self) -> VarId;
     fn add_variables(&mut self, n: usize) -> Vec<VarId>;
 
-    fn add_constraint<F, S>(&mut self, f: F, s: S) -> ConstrId<F, S>
-    where
-        F: Function,
-        S: Set;
+    fn add_constraint(&mut self, f: FunctionType, s: ScalarSetType) -> ConstrId;
 
-    fn supports_constraint<F, S>(&self) -> bool
-    where
-        F: Function,
-        S: Set;
+    fn supports_constraint(&self, f: &FunctionType, s: &ScalarSetType) -> bool;
 
     fn get_attr<A: Attribute>(&self, key: &A) -> Option<A::Value>;
     fn set_attr<A: Attribute>(&mut self, key: &A, val: A::Value) -> Result<(), MoiError>;

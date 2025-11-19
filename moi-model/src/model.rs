@@ -1,9 +1,8 @@
 use moi_core::attributes::Attribute;
 use moi_core::errors::MoiError;
-use moi_core::functions::AffineFn;
+use moi_core::functions::{AffineFn, FunctionType};
 use moi_core::indices::{ConstrId, VarId};
-use moi_core::sets::{EqualTo, GreaterThan, Interval, LessThan};
-use moi_core::traits::{Function, Set};
+use moi_core::sets::{ScalarSetType};
 use moi_solver_api::{ModelLike, Optimizer};
 use std::any::Any;
 use std::collections::HashMap;
@@ -23,6 +22,7 @@ pub struct Model {
     name_to_var: HashMap<String, VarId>,
     con_to_name: HashMap<usize, String>,
     name_to_con: HashMap<String, usize>,
+    constraints: Vec<moi_core::constraint::ConstraintType>,
 }
 
 impl ModelLike for Model {
@@ -41,29 +41,24 @@ impl ModelLike for Model {
         v
     }
 
-    fn add_constraint<F, S>(&mut self, _f: F, _s: S) -> ConstrId<F, S>
-    where
-        F: Function,
-        S: Set,
-    {
+    fn add_constraint(&mut self, f: FunctionType, s: ScalarSetType) -> ConstrId {
         let id = self.num_constr;
         self.num_constr += 1;
+        let c = moi_core::constraint::ConstraintType::new(id, f, s);
+        self.constraints.push(c);
         ConstrId::new(id)
     }
 
-    fn supports_constraint<F, S>(&self) -> bool
-    where
-        F: Function,
-        S: Set,
-    {
-        // MVP: 支持 AffineFn 与标量边界集合（通过类型名字符串判定，避免'static约束）
-        let f_ok = core::any::type_name::<F>() == core::any::type_name::<AffineFn>();
-        let s_name = core::any::type_name::<S>();
-        let s_ok = s_name == core::any::type_name::<GreaterThan>()
-            || s_name == core::any::type_name::<LessThan>()
-            || s_name == core::any::type_name::<EqualTo>()
-            || s_name == core::any::type_name::<Interval>();
-        f_ok && s_ok
+    fn supports_constraint(&self, f: &FunctionType, s: &ScalarSetType) -> bool {
+        // MVP: 支持 AffineFn 与标量边界集合
+        matches!(f, FunctionType::Affine(_))
+            && matches!(
+                s,
+                ScalarSetType::GreaterThan(_)
+                    | ScalarSetType::LessThan(_)
+                    | ScalarSetType::EqualTo(_)
+                    | ScalarSetType::Interval(..)
+            )
     }
 
     fn get_attr<A: Attribute>(&self, _key: &A) -> Option<A::Value> {
@@ -92,6 +87,7 @@ impl ModelLike for Model {
         self.name_to_var.clear();
         self.con_to_name.clear();
         self.name_to_con.clear();
+        self.constraints.clear();
     }
 
     fn set_objective_affine(&mut self, f: AffineFn) -> Result<(), MoiError> {
