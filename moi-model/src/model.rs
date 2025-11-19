@@ -119,6 +119,10 @@ impl Model {
         self.objective = Some(f);
     }
 
+    pub fn set_model_name<S: Into<String>>(&mut self, name: S) {
+        self.name = name.into();
+    }
+
     pub fn set_var_name<S: Into<String>>(&mut self, v: VarId, name: S) -> Result<(), MoiError> {
         let idx = v.0;
         if idx >= self.variables.len() {
