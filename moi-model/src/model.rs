@@ -1,12 +1,13 @@
 use moi_core::attributes::Attribute;
 use moi_core::errors::MoiError;
-use moi_core::functions::{AffineFn, FunctionType};
+use moi_core::functions::{ScalarAffineFn, ScalarFunctionType};
 use moi_core::indices::{ConstrId, VarId};
-use moi_core::sets::{ScalarSetType};
+use moi_core::sets::ScalarSetType;
 use moi_solver_api::{ModelLike, Optimizer};
 use std::any::Any;
 use std::collections::HashMap;
 
+use moi_core::constraint::ScalarConstraintType;
 use moi_core::variable::Variable;
 
 #[derive(Default)]
@@ -14,15 +15,15 @@ pub struct Model {
     num_vars: usize,
     num_constr: usize,
     attrs: HashMap<&'static str, Box<dyn Any>>,
-    objective: Option<AffineFn>,
+    objective: Option<ScalarAffineFn>,
     // storage
     name: String,
     variables: Vec<Variable>,
+    constraints: Vec<moi_core::constraint::ScalarConstraintType>,
     var_to_name: HashMap<usize, String>,
     name_to_var: HashMap<String, VarId>,
     con_to_name: HashMap<usize, String>,
     name_to_con: HashMap<String, usize>,
-    constraints: Vec<moi_core::constraint::ConstraintType>,
 }
 
 impl ModelLike for Model {
@@ -41,17 +42,17 @@ impl ModelLike for Model {
         v
     }
 
-    fn add_constraint(&mut self, f: FunctionType, s: ScalarSetType) -> ConstrId {
+    fn add_constraint(&mut self, f: ScalarFunctionType, s: ScalarSetType) -> ConstrId {
         let id = self.num_constr;
         self.num_constr += 1;
-        let c = moi_core::constraint::ConstraintType::new(id, f, s);
+        let c = ScalarConstraintType::new(id, f, s);
         self.constraints.push(c);
         ConstrId::new(id)
     }
 
-    fn supports_constraint(&self, f: &FunctionType, s: &ScalarSetType) -> bool {
+    fn supports_constraint(&self, f: &ScalarFunctionType, s: &ScalarSetType) -> bool {
         // MVP: 支持 AffineFn 与标量边界集合
-        matches!(f, FunctionType::Affine(_))
+        matches!(f, ScalarFunctionType::Affine(_))
             && matches!(
                 s,
                 ScalarSetType::GreaterThan(_)
@@ -90,12 +91,12 @@ impl ModelLike for Model {
         self.constraints.clear();
     }
 
-    fn set_objective_affine(&mut self, f: AffineFn) -> Result<(), MoiError> {
+    fn set_objective_affine(&mut self, f: ScalarAffineFn) -> Result<(), MoiError> {
         self.set_objective_internal(f);
         Ok(())
     }
 
-    fn get_objective_affine(&self) -> Option<&AffineFn> {
+    fn get_objective_affine(&self) -> Option<&ScalarAffineFn> {
         self.objective.as_ref()
     }
 }
@@ -113,7 +114,7 @@ impl Optimizer for Model {
 }
 
 impl Model {
-    fn set_objective_internal(&mut self, mut f: AffineFn) {
+    fn set_objective_internal(&mut self, mut f: ScalarAffineFn) {
         f.simplify();
         self.objective = Some(f);
     }
@@ -139,7 +140,6 @@ impl Model {
     }
 
     // constraint naming APIs could be added later using con_to_name/name_to_con
-
 }
 
 // move implementations into the existing ModelLike impl above

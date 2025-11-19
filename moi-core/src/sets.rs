@@ -1,12 +1,11 @@
 // Rework: introduce a unified SetType enum while keeping concrete structs
 
-
 #[derive(Clone, Debug)]
 pub enum ScalarSetType {
     GreaterThan(f64),
     LessThan(f64),
     EqualTo(f64),
-    Interval(f64,f64),
+    Interval(f64, f64),
 }
 
 impl ScalarSetType {

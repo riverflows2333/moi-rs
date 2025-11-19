@@ -1,5 +1,5 @@
 pub mod affine;
 pub mod function;
 
-pub use affine::{AffineFn, AffineTerm};
-pub use function::FunctionType;
+pub use affine::{ScalarAffineFn, AffineTerm};
+pub use function::ScalarFunctionType;

@@ -7,17 +7,23 @@ pub struct AffineTerm {
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct AffineFn {
+pub struct ScalarAffineFn {
     pub terms: Vec<AffineTerm>,
     pub constant: f64,
 }
 
-impl AffineFn {
+impl ScalarAffineFn {
     pub fn new() -> Self {
-        Self { terms: Vec::new(), constant: 0.0 }
+        Self {
+            terms: Vec::new(),
+            constant: 0.0,
+        }
     }
     pub fn with_constant(constant: f64) -> Self {
-        Self { terms: Vec::new(), constant }
+        Self {
+            terms: Vec::new(),
+            constant,
+        }
     }
     pub fn push_term(&mut self, var: VarId, coeff: f64) {
         if coeff != 0.0 {
@@ -40,4 +46,3 @@ impl AffineFn {
         self.terms = merged;
     }
 }
-

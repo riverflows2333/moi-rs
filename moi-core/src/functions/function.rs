@@ -1,14 +1,14 @@
-use super::affine::AffineFn;
+use super::affine::ScalarAffineFn;
 
 #[derive(Clone, Debug)]
-pub enum FunctionType {
-    Affine(AffineFn),
+pub enum ScalarFunctionType {
+    Affine(ScalarAffineFn),
 }
 
-impl FunctionType {
+impl ScalarFunctionType {
     pub fn output_dim(&self) -> usize {
         match self {
-            FunctionType::Affine(_f) => 1,
+            ScalarFunctionType::Affine(_f) => 1,
         }
     }
 }

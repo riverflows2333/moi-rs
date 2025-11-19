@@ -1,5 +1,5 @@
 use moi_core::attributes::{ObjectiveSense, Sense};
-use moi_core::functions::{AffineFn, FunctionType};
+use moi_core::functions::{ScalarAffineFn, ScalarFunctionType};
 use moi_core::sets::ScalarSetType;
 use moi_model::Model;
 use moi_solver_api::{ModelLike, Optimizer, SolveStatus};
@@ -7,7 +7,7 @@ use moi_solver_api::{ModelLike, Optimizer, SolveStatus};
 #[test]
 fn test_supports_affine_scalar_bounds() {
     let model = Model::default();
-    let f = FunctionType::Affine(AffineFn::default());
+    let f = ScalarFunctionType::Affine(ScalarAffineFn::default());
     let s = ScalarSetType::GreaterThan(0.0);
     assert!(model.supports_constraint(&f, &s));
 }

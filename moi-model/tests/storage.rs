@@ -1,4 +1,4 @@
-use moi_core::functions::{AffineFn, FunctionType};
+use moi_core::functions::{ScalarAffineFn, ScalarFunctionType};
 use moi_core::sets::ScalarSetType;
 use moi_model::Model;
 use moi_solver_api::ModelLike;
@@ -18,14 +18,14 @@ fn variables_and_names_are_stored() {
 fn add_constraint_returns_increasing_ids() {
     let mut m = Model::default();
     let v = m.add_variable();
-    let mut f = AffineFn::default();
+    let mut f = ScalarAffineFn::default();
     f.push_term(v, 2.0);
     let c1 = m.add_constraint(
-        FunctionType::Affine(f.clone()),
+        ScalarFunctionType::Affine(f.clone()),
         ScalarSetType::GreaterThan(1.0),
     );
     let c2 = m.add_constraint(
-        FunctionType::Affine(f),
+        ScalarFunctionType::Affine(f),
         ScalarSetType::GreaterThan(2.0),
     );
     assert_eq!(c1.raw(), 0);

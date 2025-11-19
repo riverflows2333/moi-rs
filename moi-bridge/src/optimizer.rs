@@ -1,6 +1,6 @@
 use moi_core::attributes::Attribute;
 use moi_core::errors::MoiError;
-use moi_core::functions::{AffineFn, FunctionType};
+use moi_core::functions::{ScalarAffineFn, ScalarFunctionType};
 use moi_core::indices::{ConstrId, VarId};
 use moi_core::sets::ScalarSetType;
 use moi_solver_api::{ModelLike, Optimizer, SolveStatus};
@@ -49,8 +49,8 @@ where
     O: ModelLike,
 {
     /// Explicit API: add an affine scalar-bound constraint, bridging to Interval if needed.
-    pub fn add_affine_bound(&mut self, f: AffineFn, b: ScalarBoundSet) -> ConstrId {
-        let fty = FunctionType::Affine(f);
+    pub fn add_affine_bound(&mut self, f: ScalarAffineFn, b: ScalarBoundSet) -> ConstrId {
+        let fty = ScalarFunctionType::Affine(f);
         let (l, u) = b.to_interval();
         // 优先尝试模型自身支持的原始形式
         match b {
@@ -86,12 +86,12 @@ where
         self.inner.add_variables(n)
     }
 
-    fn add_constraint(&mut self, f: FunctionType, s: ScalarSetType) -> ConstrId {
+    fn add_constraint(&mut self, f: ScalarFunctionType, s: ScalarSetType) -> ConstrId {
         // MVP: by default delegate. Use explicit APIs for bridging where needed.
         self.inner.add_constraint(f, s)
     }
 
-    fn supports_constraint(&self, f: &FunctionType, s: &ScalarSetType) -> bool {
+    fn supports_constraint(&self, f: &ScalarFunctionType, s: &ScalarSetType) -> bool {
         // Delegate to inner; bridging capability is exposed via explicit APIs.
         self.inner.supports_constraint(f, s)
     }
@@ -110,10 +110,10 @@ where
         self.inner.empty()
     }
 
-    fn set_objective_affine(&mut self, f: AffineFn) -> Result<(), MoiError> {
+    fn set_objective_affine(&mut self, f: ScalarAffineFn) -> Result<(), MoiError> {
         self.inner.set_objective_affine(f)
     }
-    fn get_objective_affine(&self) -> Option<&AffineFn> {
+    fn get_objective_affine(&self) -> Option<&ScalarAffineFn> {
         self.inner.get_objective_affine()
     }
 }

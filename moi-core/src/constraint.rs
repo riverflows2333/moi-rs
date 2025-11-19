@@ -1,17 +1,19 @@
-use crate::functions::FunctionType;
+use crate::functions::ScalarFunctionType;
+use crate::indices::ConstrId;
 use crate::sets::ScalarSetType;
-
 #[derive(Debug, Clone)]
-pub struct ConstraintType {
-    pub id: usize,
-    pub func: FunctionType,
+pub struct ScalarConstraintType {
+    pub id: ConstrId,
+    pub func: ScalarFunctionType,
     pub set: ScalarSetType,
 }
 
-impl ConstraintType {
-    pub fn new(id: usize, func: FunctionType, set: ScalarSetType) -> Self {
-        Self { id, func, set }
+impl ScalarConstraintType {
+    pub fn new(id: usize, func: ScalarFunctionType, set: ScalarSetType) -> Self {
+        Self {
+            id: ConstrId::new(id),
+            func,
+            set,
+        }
     }
 }
-
-

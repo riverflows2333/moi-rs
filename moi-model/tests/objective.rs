@@ -1,5 +1,5 @@
 use moi_core::attributes::{ObjectiveSense, Sense};
-use moi_core::functions::AffineFn;
+use moi_core::functions::ScalarAffineFn;
 use moi_model::Model;
 use moi_solver_api::{ModelLike, Optimizer};
 
@@ -7,7 +7,7 @@ use moi_solver_api::{ModelLike, Optimizer};
 fn set_and_get_objective_affine() {
     let mut m = Model::default();
     let v = m.add_variable();
-    let mut obj = AffineFn::default();
+    let mut obj = ScalarAffineFn::default();
     obj.push_term(v, 3.0);
     obj.push_term(v, 2.0); // will simplify to 5.0
     m.set_objective_affine(obj).unwrap();
@@ -28,7 +28,7 @@ fn set_objective_sense_via_attr() {
 fn optimize_after_setting_objective() {
     let mut m = Model::default();
     let _v = m.add_variable();
-    m.set_objective_affine(AffineFn::with_constant(1.0)).unwrap();
+    m.set_objective_affine(ScalarAffineFn::with_constant(1.0)).unwrap();
     let status = m.optimize().unwrap();
     assert_eq!(status, moi_solver_api::SolveStatus::Optimal);
 }
