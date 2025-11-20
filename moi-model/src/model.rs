@@ -7,7 +7,7 @@ use moi_solver_api::{ModelLike, Optimizer};
 use std::any::Any;
 use std::collections::HashMap;
 
-use moi_core::constraint::ScalarConstraintType;
+use moi_core::constraint::ScalarConstraint;
 use moi_core::variable::Variable;
 
 #[derive(Default)]
@@ -19,7 +19,7 @@ pub struct Model {
     // storage
     name: String,
     variables: Vec<Variable>,
-    constraints: Vec<moi_core::constraint::ScalarConstraintType>,
+    constraints: Vec<moi_core::constraint::ScalarConstraint>,
     var_to_name: HashMap<usize, String>,
     name_to_var: HashMap<String, VarId>,
     con_to_name: HashMap<usize, String>,
@@ -45,7 +45,7 @@ impl ModelLike for Model {
     fn add_constraint(&mut self, f: ScalarFunctionType, s: ScalarSetType) -> ConstrId {
         let id = self.num_constr;
         self.num_constr += 1;
-        let c = ScalarConstraintType::new(id, f, s);
+        let c = ScalarConstraint::new(id, f, s);
         self.constraints.push(c);
         ConstrId::new(id)
     }
