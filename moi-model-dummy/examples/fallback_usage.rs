@@ -14,8 +14,9 @@ fn main() {
     // 添加变量
     let v = uf.add_variable();
     let w = uf.add_variable();
-    uf.set_model_attr(ModelAttribute::NumberOfVariables, AttributeValue::USize(2)).unwrap();
-    uf.set_model_attr(ModelAttribute::ListOfVariableIndices, AttributeValue::VarIndices(vec![v.0, w.0])).unwrap();
+    // 变量数量与索引列表为派生只读属性，使用 get 读取
+    if let Some(nv) = uf.get_model_attr(&ModelAttribute::NumberOfVariables) { println!("num vars: {:?}", nv.as_usize()); }
+    if let Some(idx) = uf.get_model_attr(&ModelAttribute::ListOfVariableIndices) { println!("var indices: {:?}", idx); }
 
     // 构造并设置目标（仿射）
     let mut obj = ScalarAffineFn::default();

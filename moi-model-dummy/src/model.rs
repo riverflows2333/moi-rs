@@ -1,4 +1,6 @@
-use moi_core::attributes::{AttributeValue, ModelAttribute, OptimizerAttribute, VariableAttribute, ConstraintAttribute};
+use moi_core::attributes::{
+    AttributeValue, ConstraintAttribute, ModelAttribute, OptimizerAttribute, VariableAttribute,
+};
 use moi_core::errors::MoiError;
 use moi_core::functions::ScalarFunctionType;
 use moi_core::indices::{ConstrId, VarId};
@@ -27,7 +29,6 @@ pub struct DummyModel {
     variable_attr: HashMap<VariableAttribute, HashMap<VarId, AttributeValue>>,
     constraint_attr: HashMap<ConstraintAttribute, HashMap<ConstrId, AttributeValue>>,
 }
-
 
 impl Optimizer for DummyModel {
     fn optimize(&mut self) -> Result<moi_solver_api::SolveStatus, MoiError> {
@@ -71,67 +72,136 @@ impl DummyModel {
 
 // 属性 set/get API（直接在 DummyModel 上）
 impl DummyModel {
-    pub fn set_optimizer_attr(&mut self, k: OptimizerAttribute, v: AttributeValue) -> Result<(), MoiError> {
-        if !validate_optimizer_attr(&k, &v) { return Err(MoiError::Msg("attribute value type mismatch".into())); }
-        self.optimizer_attr.insert(k, v); Ok(())
+    pub fn set_optimizer_attr(
+        &mut self,
+        k: OptimizerAttribute,
+        v: AttributeValue,
+    ) -> Result<(), MoiError> {
+        if !validate_optimizer_attr(&k, &v) {
+            return Err(MoiError::Msg("attribute value type mismatch".into()));
+        }
+        self.optimizer_attr.insert(k, v);
+        Ok(())
     }
     pub fn get_optimizer_attr(&self, k: &OptimizerAttribute) -> Option<&AttributeValue> {
         self.optimizer_attr.get(k)
     }
-    pub fn set_model_attr(&mut self, k: ModelAttribute, mut v: AttributeValue) -> Result<(), MoiError> {
-        if !self.supports_model_attr(&k) { return Err(MoiError::UnsupportedAttribute); }
+    pub fn set_model_attr(
+        &mut self,
+        k: ModelAttribute,
+        mut v: AttributeValue,
+    ) -> Result<(), MoiError> {
+        if !self.supports_model_attr(&k) {
+            return Err(MoiError::UnsupportedAttribute);
+        }
         // 派生只读属性禁止写：变量/约束计数、变量索引列表
         match k {
-            ModelAttribute::NumberOfVariables | ModelAttribute::NumberOfConstraints | ModelAttribute::ListOfVariableIndices => {
+            ModelAttribute::NumberOfVariables
+            | ModelAttribute::NumberOfConstraints
+            | ModelAttribute::ListOfVariableIndices => {
                 return Err(MoiError::SetAttributeNotAllowed);
             }
             ModelAttribute::ObjectiveFunction => {
                 // 需要进行仿射函数简化
-                if let AttributeValue::Affine(ref mut aff) = v { aff.simplify(); }
+                if let AttributeValue::Affine(ref mut aff) = v {
+                    aff.simplify();
+                }
             }
             ModelAttribute::SolverName => { /* 冗余映射到 optimizer 属性 */ }
             ModelAttribute::Silent => { /* 同上 */ }
             _ => {}
         }
-        if !validate_model_attr(&k, &v) { return Err(MoiError::Msg("attribute value type mismatch".into())); }
+        if !validate_model_attr(&k, &v) {
+            return Err(MoiError::Msg("attribute value type mismatch".into()));
+        }
         // 冗余同步：SolverName / Silent -> optimizer_attr
         match (&k, &v) {
-            (ModelAttribute::SolverName, AttributeValue::String(s)) => { self.optimizer_attr.insert(OptimizerAttribute::SolverName, AttributeValue::String(s.clone())); }
-            (ModelAttribute::Silent, AttributeValue::Bool(b)) => { self.optimizer_attr.insert(OptimizerAttribute::Silent, AttributeValue::Bool(*b)); }
+            (ModelAttribute::SolverName, AttributeValue::String(s)) => {
+                self.optimizer_attr.insert(
+                    OptimizerAttribute::SolverName,
+                    AttributeValue::String(s.clone()),
+                );
+            }
+            (ModelAttribute::Silent, AttributeValue::Bool(b)) => {
+                self.optimizer_attr
+                    .insert(OptimizerAttribute::Silent, AttributeValue::Bool(*b));
+            }
             _ => {}
         }
-        self.model_attr.insert(k, v); Ok(())
+        self.model_attr.insert(k, v);
+        Ok(())
     }
     pub fn get_model_attr(&self, k: &ModelAttribute) -> Option<AttributeValue> {
-        if !self.supports_model_attr(k) { return None; }
+        if !self.supports_model_attr(k) {
+            return None;
+        }
         match k {
             ModelAttribute::NumberOfVariables => Some(AttributeValue::USize(self.variables.len())),
-            ModelAttribute::NumberOfConstraints => Some(AttributeValue::USize(self.constraints.len())),
-            ModelAttribute::ListOfVariableIndices => Some(AttributeValue::VarIndices((0..self.variables.len()).collect())),
-            ModelAttribute::SolverName => self.optimizer_attr.get(&OptimizerAttribute::SolverName).cloned(),
-            ModelAttribute::Silent => self.optimizer_attr.get(&OptimizerAttribute::Silent).cloned(),
+            ModelAttribute::NumberOfConstraints => {
+                Some(AttributeValue::USize(self.constraints.len()))
+            }
+            ModelAttribute::ListOfVariableIndices => Some(AttributeValue::VarIndices(
+                (0..self.variables.len()).collect(),
+            )),
+            ModelAttribute::SolverName => self
+                .optimizer_attr
+                .get(&OptimizerAttribute::SolverName)
+                .cloned(),
+            ModelAttribute::Silent => self
+                .optimizer_attr
+                .get(&OptimizerAttribute::Silent)
+                .cloned(),
             _ => self.model_attr.get(k).cloned(),
         }
     }
-    pub fn set_variable_attr(&mut self, var: VarId, k: VariableAttribute, v: AttributeValue) -> Result<(), MoiError> {
-        if !validate_variable_attr(&k, &v) { return Err(MoiError::Msg("attribute value type mismatch".into())); }
-        self.variable_attr.entry(k.clone()).or_default().insert(var, v); Ok(())
+    pub fn set_variable_attr(
+        &mut self,
+        var: VarId,
+        k: VariableAttribute,
+        v: AttributeValue,
+    ) -> Result<(), MoiError> {
+        if !validate_variable_attr(&k, &v) {
+            return Err(MoiError::Msg("attribute value type mismatch".into()));
+        }
+        self.variable_attr
+            .entry(k.clone())
+            .or_default()
+            .insert(var, v);
+        Ok(())
     }
     pub fn get_variable_attr(&self, var: VarId, k: &VariableAttribute) -> Option<&AttributeValue> {
         self.variable_attr.get(k).and_then(|m| m.get(&var))
     }
-    pub fn set_constraint_attr(&mut self, cid: ConstrId, k: ConstraintAttribute, v: AttributeValue) -> Result<(), MoiError> {
-        if !validate_constraint_attr(&k, &v) { return Err(MoiError::Msg("attribute value type mismatch".into())); }
-        self.constraint_attr.entry(k.clone()).or_default().insert(cid, v); Ok(())
+    pub fn set_constraint_attr(
+        &mut self,
+        cid: ConstrId,
+        k: ConstraintAttribute,
+        v: AttributeValue,
+    ) -> Result<(), MoiError> {
+        if !validate_constraint_attr(&k, &v) {
+            return Err(MoiError::Msg("attribute value type mismatch".into()));
+        }
+        self.constraint_attr
+            .entry(k.clone())
+            .or_default()
+            .insert(cid, v);
+        Ok(())
     }
-    pub fn get_constraint_attr(&self, cid: ConstrId, k: &ConstraintAttribute) -> Option<&AttributeValue> {
+    pub fn get_constraint_attr(
+        &self,
+        cid: ConstrId,
+        k: &ConstraintAttribute,
+    ) -> Option<&AttributeValue> {
         self.constraint_attr.get(k).and_then(|m| m.get(&cid))
     }
 }
 
 // 校验函数
 fn validate_optimizer_attr(k: &OptimizerAttribute, v: &AttributeValue) -> bool {
-    match k { OptimizerAttribute::SolverName => matches!(v, AttributeValue::String(_)), OptimizerAttribute::Silent => matches!(v, AttributeValue::Bool(_)), }
+    match k {
+        OptimizerAttribute::SolverName => matches!(v, AttributeValue::String(_)),
+        OptimizerAttribute::Silent => matches!(v, AttributeValue::Bool(_)),
+    }
 }
 fn validate_model_attr(k: &ModelAttribute, v: &AttributeValue) -> bool {
     match k {
@@ -149,10 +219,15 @@ fn validate_model_attr(k: &ModelAttribute, v: &AttributeValue) -> bool {
     }
 }
 fn validate_variable_attr(k: &VariableAttribute, v: &AttributeValue) -> bool {
-    match k { VariableAttribute::Primal => matches!(v, AttributeValue::Primal(_)) }
+    match k {
+        VariableAttribute::Primal => matches!(v, AttributeValue::Primal(_)),
+    }
 }
 fn validate_constraint_attr(k: &ConstraintAttribute, v: &AttributeValue) -> bool {
-    match k { ConstraintAttribute::Slack => matches!(v, AttributeValue::Slack(_)), ConstraintAttribute::Dual => matches!(v, AttributeValue::Dual(_)), }
+    match k {
+        ConstraintAttribute::Slack => matches!(v, AttributeValue::Slack(_)),
+        ConstraintAttribute::Dual => matches!(v, AttributeValue::Dual(_)),
+    }
 }
 
 // move implementations into the existing ModelLike impl above
@@ -175,25 +250,66 @@ impl ModelLike for DummyModel {
         ConstrId::new(id)
     }
     fn supports_constraint(&self, f: &ScalarFunctionType, s: &ScalarSetType) -> bool {
-        matches!(f, ScalarFunctionType::Affine(_)) && matches!(
-            s,
-            ScalarSetType::GreaterThan(_)
-                | ScalarSetType::LessThan(_)
-                | ScalarSetType::EqualTo(_)
-                | ScalarSetType::Interval(..)
-        )
+        matches!(f, ScalarFunctionType::Affine(_))
+            && matches!(
+                s,
+                ScalarSetType::GreaterThan(_)
+                    | ScalarSetType::LessThan(_)
+                    | ScalarSetType::EqualTo(_)
+                    | ScalarSetType::Interval(..)
+            )
     }
     // attribute APIs
-    fn set_optimizer_attr(&mut self, attr: OptimizerAttribute, val: AttributeValue) -> Result<(), MoiError> { self.set_optimizer_attr(attr, val) }
-    fn get_optimizer_attr(&self, attr: &OptimizerAttribute) -> Option<&AttributeValue> { self.get_optimizer_attr(attr) }
-    fn set_model_attr(&mut self, attr: ModelAttribute, val: AttributeValue) -> Result<(), MoiError> { self.set_model_attr(attr, val) }
-    fn get_model_attr(&self, attr: &ModelAttribute) -> Option<AttributeValue> { self.get_model_attr(attr) }
-    fn set_variable_attr(&mut self, var: VarId, attr: VariableAttribute, val: AttributeValue) -> Result<(), MoiError> { self.set_variable_attr(var, attr, val) }
-    fn get_variable_attr(&self, var: VarId, attr: &VariableAttribute) -> Option<&AttributeValue> { self.get_variable_attr(var, attr) }
-    fn set_constraint_attr(&mut self, cid: ConstrId, attr: ConstraintAttribute, val: AttributeValue) -> Result<(), MoiError> { self.set_constraint_attr(cid, attr, val) }
-    fn get_constraint_attr(&self, cid: ConstrId, attr: &ConstraintAttribute) -> Option<&AttributeValue> { self.get_constraint_attr(cid, attr) }
+    fn set_optimizer_attr(
+        &mut self,
+        attr: OptimizerAttribute,
+        val: AttributeValue,
+    ) -> Result<(), MoiError> {
+        self.set_optimizer_attr(attr, val)
+    }
+    fn get_optimizer_attr(&self, attr: &OptimizerAttribute) -> Option<&AttributeValue> {
+        self.get_optimizer_attr(attr)
+    }
+    fn set_model_attr(
+        &mut self,
+        attr: ModelAttribute,
+        val: AttributeValue,
+    ) -> Result<(), MoiError> {
+        self.set_model_attr(attr, val)
+    }
+    fn get_model_attr(&self, attr: &ModelAttribute) -> Option<AttributeValue> {
+        self.get_model_attr(attr)
+    }
+    fn set_variable_attr(
+        &mut self,
+        var: VarId,
+        attr: VariableAttribute,
+        val: AttributeValue,
+    ) -> Result<(), MoiError> {
+        self.set_variable_attr(var, attr, val)
+    }
+    fn get_variable_attr(&self, var: VarId, attr: &VariableAttribute) -> Option<&AttributeValue> {
+        self.get_variable_attr(var, attr)
+    }
+    fn set_constraint_attr(
+        &mut self,
+        cid: ConstrId,
+        attr: ConstraintAttribute,
+        val: AttributeValue,
+    ) -> Result<(), MoiError> {
+        self.set_constraint_attr(cid, attr, val)
+    }
+    fn get_constraint_attr(
+        &self,
+        cid: ConstrId,
+        attr: &ConstraintAttribute,
+    ) -> Option<&AttributeValue> {
+        self.get_constraint_attr(cid, attr)
+    }
     // objective & housekeeping
-    fn is_empty(&self) -> bool { self.variables.is_empty() && self.constraints.is_empty() }
+    fn is_empty(&self) -> bool {
+        self.variables.is_empty() && self.constraints.is_empty()
+    }
     fn empty(&mut self) {
         self.variables.clear();
         self.var_to_name.clear();
@@ -208,7 +324,9 @@ impl ModelLike for DummyModel {
     }
 
     // 支持查询：若返回 true 则 get/set 语义受保证
-    fn supports_optimizer_attr(&self, _attr: &OptimizerAttribute) -> bool { true }
+    fn supports_optimizer_attr(&self, _attr: &OptimizerAttribute) -> bool {
+        true
+    }
     fn supports_model_attr(&self, attr: &ModelAttribute) -> bool {
         match attr {
             ModelAttribute::ObjectiveSense => true,
