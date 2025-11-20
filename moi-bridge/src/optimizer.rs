@@ -1,6 +1,6 @@
-use moi_core::attributes::Attribute;
+use moi_core::attributes::{AttributeValue, ModelAttribute, OptimizerAttribute, VariableAttribute, ConstraintAttribute};
 use moi_core::errors::MoiError;
-use moi_core::functions::{ScalarAffineFn, ScalarFunctionType};
+use moi_core::functions::{ScalarFunctionType, ScalarAffineFn};
 use moi_core::indices::{ConstrId, VarId};
 use moi_core::sets::ScalarSetType;
 use moi_solver_api::{ModelLike, Optimizer, SolveStatus};
@@ -96,12 +96,19 @@ where
         self.inner.supports_constraint(f, s)
     }
 
-    fn get_attr<A: Attribute>(&self, key: &A) -> Option<A::Value> {
-        self.inner.get_attr(key)
-    }
-    fn set_attr<A: Attribute>(&mut self, key: &A, val: A::Value) -> Result<(), MoiError> {
-        self.inner.set_attr(key, val)
-    }
+    fn set_optimizer_attr(&mut self, a: OptimizerAttribute, v: AttributeValue) -> Result<(), MoiError> { self.inner.set_optimizer_attr(a, v) }
+    fn get_optimizer_attr(&self, a: &OptimizerAttribute) -> Option<&AttributeValue> { self.inner.get_optimizer_attr(a) }
+    fn set_model_attr(&mut self, a: ModelAttribute, v: AttributeValue) -> Result<(), MoiError> { self.inner.set_model_attr(a, v) }
+    fn get_model_attr(&self, a: &ModelAttribute) -> Option<AttributeValue> { self.inner.get_model_attr(a) }
+    fn set_variable_attr(&mut self, var: VarId, a: VariableAttribute, v: AttributeValue) -> Result<(), MoiError> { self.inner.set_variable_attr(var, a, v) }
+    fn get_variable_attr(&self, var: VarId, a: &VariableAttribute) -> Option<&AttributeValue> { self.inner.get_variable_attr(var, a) }
+    fn set_constraint_attr(&mut self, cid: ConstrId, a: ConstraintAttribute, v: AttributeValue) -> Result<(), MoiError> { self.inner.set_constraint_attr(cid, a, v) }
+    fn get_constraint_attr(&self, cid: ConstrId, a: &ConstraintAttribute) -> Option<&AttributeValue> { self.inner.get_constraint_attr(cid, a) }
+
+    fn supports_optimizer_attr(&self, attr: &OptimizerAttribute) -> bool { self.inner.supports_optimizer_attr(attr) }
+    fn supports_model_attr(&self, attr: &ModelAttribute) -> bool { self.inner.supports_model_attr(attr) }
+    fn supports_variable_attr(&self, attr: &VariableAttribute) -> bool { self.inner.supports_variable_attr(attr) }
+    fn supports_constraint_attr(&self, attr: &ConstraintAttribute) -> bool { self.inner.supports_constraint_attr(attr) }
 
     fn is_empty(&self) -> bool {
         self.inner.is_empty()
@@ -110,12 +117,6 @@ where
         self.inner.empty()
     }
 
-    fn set_objective_affine(&mut self, f: ScalarAffineFn) -> Result<(), MoiError> {
-        self.inner.set_objective_affine(f)
-    }
-    fn get_objective_affine(&self) -> Option<&ScalarAffineFn> {
-        self.inner.get_objective_affine()
-    }
 }
 
 impl<O> Optimizer for BridgeOptimizer<O>

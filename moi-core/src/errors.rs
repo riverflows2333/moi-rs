@@ -11,6 +11,9 @@ pub enum MoiError {
     #[error("Unsupported attribute")]
     UnsupportedAttribute,
 
+    #[error("Setting attribute not allowed (read-only or derived)")]
+    SetAttributeNotAllowed,
+
     #[error("Scalar function constant not zero: {value}")]
     ScalarFunctionConstantNotZero { value: f64 },
 

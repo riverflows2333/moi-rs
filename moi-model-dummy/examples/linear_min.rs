@@ -1,4 +1,5 @@
 use moi_solver_api::ModelLike;
+use moi_core::attributes::{ModelAttribute, AttributeValue};
 
 fn main() {
     let mut model = moi_model_dummy::DummyModel::default();
@@ -13,11 +14,11 @@ fn main() {
         moi_core::sets::ScalarSetType::GreaterThan(1.0),
     );
 
-    // set objective: minimize x + 2y
+    // set objective via attribute: minimize x + 2y
     let mut obj = moi_core::functions::ScalarAffineFn::default();
     obj.push_term(vars[0], 1.0);
     obj.push_term(vars[1], 2.0);
-    model.set_objective_affine(obj).unwrap();
+    model.set_model_attr(ModelAttribute::ObjectiveFunction, AttributeValue::Affine(obj)).unwrap();
 
     println!("example constructed OK");
 }

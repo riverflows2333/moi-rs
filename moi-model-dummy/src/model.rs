@@ -1,11 +1,9 @@
-use moi_core::attributes::Attribute;
 use moi_core::attributes::{AttributeValue, ModelAttribute, OptimizerAttribute, VariableAttribute, ConstraintAttribute};
 use moi_core::errors::MoiError;
-use moi_core::functions::{ScalarAffineFn, ScalarFunctionType};
+use moi_core::functions::ScalarFunctionType;
 use moi_core::indices::{ConstrId, VarId};
 use moi_core::sets::ScalarSetType;
 use moi_solver_api::{ModelLike, Optimizer};
-use std::any::Any;
 use std::collections::HashMap;
 
 use moi_core::constraint::ScalarConstraint;
@@ -15,10 +13,7 @@ use moi_core::variable::Variable;
 #[derive(Default)]
 pub struct DummyModel {
     // core storage
-    num_vars: usize,
-    num_constr: usize,
-    attrs: HashMap<&'static str, Box<dyn Any>>,
-    objective: Option<ScalarAffineFn>,
+    // removed counters & generic attr box storage
     name: String,
     variables: Vec<Variable>,
     constraints: Vec<ScalarConstraint>,
@@ -33,80 +28,6 @@ pub struct DummyModel {
     constraint_attr: HashMap<ConstraintAttribute, HashMap<ConstrId, AttributeValue>>,
 }
 
-impl ModelLike for DummyModel {
-    fn add_variable(&mut self) -> VarId {
-        let id = VarId(self.num_vars);
-        self.num_vars += 1;
-        self.variables.push(Variable { id, name: None });
-        id
-    }
-
-    fn add_variables(&mut self, n: usize) -> Vec<VarId> {
-        let mut v = Vec::with_capacity(n);
-        for _ in 0..n {
-            v.push(self.add_variable());
-        }
-        v
-    }
-
-    fn add_constraint(&mut self, f: ScalarFunctionType, s: ScalarSetType) -> ConstrId {
-        let id = self.num_constr;
-        self.num_constr += 1;
-        let c = ScalarConstraint::new(id, f, s);
-        self.constraints.push(c);
-        ConstrId::new(id)
-    }
-
-    fn supports_constraint(&self, f: &ScalarFunctionType, s: &ScalarSetType) -> bool {
-        // MVP: 支持 AffineFn 与标量边界集合
-        matches!(f, ScalarFunctionType::Affine(_))
-            && matches!(
-                s,
-                ScalarSetType::GreaterThan(_)
-                    | ScalarSetType::LessThan(_)
-                    | ScalarSetType::EqualTo(_)
-                    | ScalarSetType::Interval(..)
-            )
-    }
-
-    fn get_attr<A: Attribute>(&self, _key: &A) -> Option<A::Value> {
-        let key = core::any::type_name::<A>();
-        self.attrs
-            .get(key)
-            .and_then(|b| b.downcast_ref::<A::Value>().cloned())
-    }
-
-    fn set_attr<A: Attribute>(&mut self, _key: &A, val: A::Value) -> Result<(), MoiError> {
-        let key = core::any::type_name::<A>();
-        self.attrs.insert(key, Box::new(val));
-        Ok(())
-    }
-
-    fn is_empty(&self) -> bool {
-        self.num_vars == 0 && self.num_constr == 0
-    }
-
-    fn empty(&mut self) {
-        self.num_vars = 0;
-        self.num_constr = 0;
-        self.objective = None;
-        self.variables.clear();
-        self.var_to_name.clear();
-        self.name_to_var.clear();
-        self.con_to_name.clear();
-        self.name_to_con.clear();
-        self.constraints.clear();
-    }
-
-    fn set_objective_affine(&mut self, f: ScalarAffineFn) -> Result<(), MoiError> {
-        self.set_objective_internal(f);
-        Ok(())
-    }
-
-    fn get_objective_affine(&self) -> Option<&ScalarAffineFn> {
-        self.objective.as_ref()
-    }
-}
 
 impl Optimizer for DummyModel {
     fn optimize(&mut self) -> Result<moi_solver_api::SolveStatus, MoiError> {
@@ -121,11 +42,6 @@ impl Optimizer for DummyModel {
 }
 
 impl DummyModel {
-    fn set_objective_internal(&mut self, mut f: ScalarAffineFn) {
-        f.simplify();
-        self.objective = Some(f);
-    }
-
     pub fn set_model_name<S: Into<String>>(&mut self, name: S) {
         self.name = name.into();
     }
@@ -162,12 +78,40 @@ impl DummyModel {
     pub fn get_optimizer_attr(&self, k: &OptimizerAttribute) -> Option<&AttributeValue> {
         self.optimizer_attr.get(k)
     }
-    pub fn set_model_attr(&mut self, k: ModelAttribute, v: AttributeValue) -> Result<(), MoiError> {
+    pub fn set_model_attr(&mut self, k: ModelAttribute, mut v: AttributeValue) -> Result<(), MoiError> {
+        if !self.supports_model_attr(&k) { return Err(MoiError::UnsupportedAttribute); }
+        // 派生只读属性禁止写：变量/约束计数、变量索引列表
+        match k {
+            ModelAttribute::NumberOfVariables | ModelAttribute::NumberOfConstraints | ModelAttribute::ListOfVariableIndices => {
+                return Err(MoiError::SetAttributeNotAllowed);
+            }
+            ModelAttribute::ObjectiveFunction => {
+                // 需要进行仿射函数简化
+                if let AttributeValue::Affine(ref mut aff) = v { aff.simplify(); }
+            }
+            ModelAttribute::SolverName => { /* 冗余映射到 optimizer 属性 */ }
+            ModelAttribute::Silent => { /* 同上 */ }
+            _ => {}
+        }
         if !validate_model_attr(&k, &v) { return Err(MoiError::Msg("attribute value type mismatch".into())); }
+        // 冗余同步：SolverName / Silent -> optimizer_attr
+        match (&k, &v) {
+            (ModelAttribute::SolverName, AttributeValue::String(s)) => { self.optimizer_attr.insert(OptimizerAttribute::SolverName, AttributeValue::String(s.clone())); }
+            (ModelAttribute::Silent, AttributeValue::Bool(b)) => { self.optimizer_attr.insert(OptimizerAttribute::Silent, AttributeValue::Bool(*b)); }
+            _ => {}
+        }
         self.model_attr.insert(k, v); Ok(())
     }
     pub fn get_model_attr(&self, k: &ModelAttribute) -> Option<AttributeValue> {
-        self.model_attr.get(k).cloned()
+        if !self.supports_model_attr(k) { return None; }
+        match k {
+            ModelAttribute::NumberOfVariables => Some(AttributeValue::USize(self.variables.len())),
+            ModelAttribute::NumberOfConstraints => Some(AttributeValue::USize(self.constraints.len())),
+            ModelAttribute::ListOfVariableIndices => Some(AttributeValue::VarIndices((0..self.variables.len()).collect())),
+            ModelAttribute::SolverName => self.optimizer_attr.get(&OptimizerAttribute::SolverName).cloned(),
+            ModelAttribute::Silent => self.optimizer_attr.get(&OptimizerAttribute::Silent).cloned(),
+            _ => self.model_attr.get(k).cloned(),
+        }
     }
     pub fn set_variable_attr(&mut self, var: VarId, k: VariableAttribute, v: AttributeValue) -> Result<(), MoiError> {
         if !validate_variable_attr(&k, &v) { return Err(MoiError::Msg("attribute value type mismatch".into())); }
@@ -192,8 +136,8 @@ fn validate_optimizer_attr(k: &OptimizerAttribute, v: &AttributeValue) -> bool {
 fn validate_model_attr(k: &ModelAttribute, v: &AttributeValue) -> bool {
     match k {
         ModelAttribute::ObjectiveSense => matches!(v, AttributeValue::Sense(_)),
-        ModelAttribute::ObjectiveFunction => matches!(v, AttributeValue::Function),
-        ModelAttribute::NumberOfVariables => matches!(v, AttributeValue::USize(_)),
+        ModelAttribute::ObjectiveFunction => matches!(v, AttributeValue::Affine(_)),
+        ModelAttribute::NumberOfVariables => matches!(v, AttributeValue::USize(_)), // set 时已阻止
         ModelAttribute::NumberOfConstraints => matches!(v, AttributeValue::USize(_)),
         ModelAttribute::ListOfVariableIndices => matches!(v, AttributeValue::VarIndices(_)),
         ModelAttribute::Name => matches!(v, AttributeValue::String(_)),
@@ -212,3 +156,78 @@ fn validate_constraint_attr(k: &ConstraintAttribute, v: &AttributeValue) -> bool
 }
 
 // move implementations into the existing ModelLike impl above
+
+// Implement new attribute methods from ModelLike trait
+impl ModelLike for DummyModel {
+    // core build operations
+    fn add_variable(&mut self) -> VarId {
+        let id = VarId(self.variables.len());
+        self.variables.push(Variable { id, name: None });
+        id
+    }
+    fn add_variables(&mut self, n: usize) -> Vec<VarId> {
+        (0..n).map(|_| self.add_variable()).collect()
+    }
+    fn add_constraint(&mut self, f: ScalarFunctionType, s: ScalarSetType) -> ConstrId {
+        let id = self.constraints.len();
+        let c = ScalarConstraint::new(id, f, s);
+        self.constraints.push(c);
+        ConstrId::new(id)
+    }
+    fn supports_constraint(&self, f: &ScalarFunctionType, s: &ScalarSetType) -> bool {
+        matches!(f, ScalarFunctionType::Affine(_)) && matches!(
+            s,
+            ScalarSetType::GreaterThan(_)
+                | ScalarSetType::LessThan(_)
+                | ScalarSetType::EqualTo(_)
+                | ScalarSetType::Interval(..)
+        )
+    }
+    // attribute APIs
+    fn set_optimizer_attr(&mut self, attr: OptimizerAttribute, val: AttributeValue) -> Result<(), MoiError> { self.set_optimizer_attr(attr, val) }
+    fn get_optimizer_attr(&self, attr: &OptimizerAttribute) -> Option<&AttributeValue> { self.get_optimizer_attr(attr) }
+    fn set_model_attr(&mut self, attr: ModelAttribute, val: AttributeValue) -> Result<(), MoiError> { self.set_model_attr(attr, val) }
+    fn get_model_attr(&self, attr: &ModelAttribute) -> Option<AttributeValue> { self.get_model_attr(attr) }
+    fn set_variable_attr(&mut self, var: VarId, attr: VariableAttribute, val: AttributeValue) -> Result<(), MoiError> { self.set_variable_attr(var, attr, val) }
+    fn get_variable_attr(&self, var: VarId, attr: &VariableAttribute) -> Option<&AttributeValue> { self.get_variable_attr(var, attr) }
+    fn set_constraint_attr(&mut self, cid: ConstrId, attr: ConstraintAttribute, val: AttributeValue) -> Result<(), MoiError> { self.set_constraint_attr(cid, attr, val) }
+    fn get_constraint_attr(&self, cid: ConstrId, attr: &ConstraintAttribute) -> Option<&AttributeValue> { self.get_constraint_attr(cid, attr) }
+    // objective & housekeeping
+    fn is_empty(&self) -> bool { self.variables.is_empty() && self.constraints.is_empty() }
+    fn empty(&mut self) {
+        self.variables.clear();
+        self.var_to_name.clear();
+        self.name_to_var.clear();
+        self.con_to_name.clear();
+        self.name_to_con.clear();
+        self.constraints.clear();
+        self.optimizer_attr.clear();
+        self.model_attr.clear();
+        self.variable_attr.clear();
+        self.constraint_attr.clear();
+    }
+
+    // 支持查询：若返回 true 则 get/set 语义受保证
+    fn supports_optimizer_attr(&self, _attr: &OptimizerAttribute) -> bool { true }
+    fn supports_model_attr(&self, attr: &ModelAttribute) -> bool {
+        match attr {
+            ModelAttribute::ObjectiveSense => true,
+            ModelAttribute::ObjectiveFunction => true,
+            ModelAttribute::NumberOfVariables => true,
+            ModelAttribute::NumberOfConstraints => true,
+            ModelAttribute::ListOfVariableIndices => true,
+            ModelAttribute::Name => true,
+            ModelAttribute::TerminationStatus => true,
+            ModelAttribute::ResultCount => true,
+            ModelAttribute::ObjectiveValue => true,
+            ModelAttribute::SolverName => true,
+            ModelAttribute::Silent => true,
+        }
+    }
+    fn supports_variable_attr(&self, attr: &VariableAttribute) -> bool {
+        matches!(attr, VariableAttribute::Primal)
+    }
+    fn supports_constraint_attr(&self, attr: &ConstraintAttribute) -> bool {
+        matches!(attr, ConstraintAttribute::Slack | ConstraintAttribute::Dual)
+    }
+}

@@ -1,27 +1,12 @@
-pub trait Attribute {
-    type Value: Clone + 'static;
-}
+// 旧的 Attribute trait 保留但已不再使用，可后续删除
+pub trait Attribute { type Value: Clone + 'static; }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub enum Sense {
-    Minimize,
-    Maximize,
-}
+pub enum Sense { Minimize, Maximize }
 
-pub struct ObjectiveSense;
-impl Attribute for ObjectiveSense {
-    type Value = Sense;
-}
-
-pub struct NumberOfVariables;
-impl Attribute for NumberOfVariables {
-    type Value = usize;
-}
-
-pub struct NumberOfConstraints;
-impl Attribute for NumberOfConstraints {
-    type Value = usize;
-}
+pub struct ObjectiveSense; impl Attribute for ObjectiveSense { type Value = Sense; }
+pub struct NumberOfVariables; impl Attribute for NumberOfVariables { type Value = usize; }
+pub struct NumberOfConstraints; impl Attribute for NumberOfConstraints { type Value = usize; }
 
 
 // 新的枚举分类属性体系（初始子集，后续可扩展）
@@ -40,7 +25,7 @@ pub enum OptimizerAttribute {
 pub enum ModelAttribute {
     // 构建期
     ObjectiveSense,          // Sense
-    ObjectiveFunction,       // ScalarFunctionType (占位: 目前可用 Affine)
+    ObjectiveFunction,       // ScalarAffineFn (MVP) 后续可扩展为更一般函数
     NumberOfVariables,       // usize
     NumberOfConstraints,     // usize （暂不区分 (F,S) 类型细分）
     ListOfVariableIndices,   // Vec<VarId> 或 Vec<usize>（占位）
@@ -75,11 +60,13 @@ pub enum ConstraintAttribute {
 // 说明：目前仍保留旧的单 struct Attribute 定义方式以兼容现存代码。
 // 新枚举体系后续可以配套一个统一的 AttributeValue 枚举或映射表来存储异构值。
 
-/// 统一的属性值枚举，用于 UniversalFallback 中的异构存储。
+use crate::functions::ScalarAffineFn;
+
+/// 统一的属性值枚举：支持异构存储，MVP 聚焦标量仿射目标
 #[derive(Clone, Debug)]
 pub enum AttributeValue {
     Sense(Sense),
-    Function,              // 占位：当前仅支持 Affine，可后续携带具体函数对象引用或 ID
+    Affine(ScalarAffineFn), // 目标函数（当前仅支持仿射）
     USize(usize),
     F64(f64),
     Bool(bool),

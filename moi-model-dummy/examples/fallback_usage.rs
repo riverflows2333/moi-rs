@@ -21,7 +21,7 @@ fn main() {
     let mut obj = ScalarAffineFn::default();
     obj.push_term(v, 1.0);
     obj.push_term(w, 2.0);
-    uf.set_objective_affine(obj).unwrap();
+    uf.set_model_attr(ModelAttribute::ObjectiveFunction, AttributeValue::Affine(obj)).unwrap();
     uf.set_model_attr(ModelAttribute::ObjectiveSense, AttributeValue::Sense(Sense::Minimize)).unwrap();
 
     // 模拟解后填充结果属性
