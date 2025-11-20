@@ -1,6 +1,6 @@
 use moi_core::functions::{ScalarAffineFn, ScalarFunctionType};
 use moi_core::sets::ScalarSetType;
-use moi_model::Model;
+use moi_model_dummy::Model;
 use moi_solver_api::ModelLike;
 
 #[test]

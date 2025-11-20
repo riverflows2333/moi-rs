@@ -2,7 +2,7 @@
 members = [
     "moi-core",
     "moi-solver-api",
-    "moi-model",
+    "moi-model-dummy",
     "moi-expr",
     "moi-bridge",
     "moi-cache",

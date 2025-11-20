@@ -1,6 +1,6 @@
 use moi_core::attributes::{ObjectiveSense, Sense};
 use moi_core::functions::ScalarAffineFn;
-use moi_model::Model;
+use moi_model_dummy::Model;
 use moi_solver_api::{ModelLike, Optimizer};
 
 #[test]
