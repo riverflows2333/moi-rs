@@ -1,11 +1,11 @@
 use moi_core::functions::{ScalarAffineFn, ScalarFunctionType};
 use moi_core::sets::ScalarSetType;
-use moi_model_dummy::Model;
+use moi_model_dummy::DummyModel;
 use moi_solver_api::ModelLike;
 
 #[test]
 fn variables_and_names_are_stored() {
-    let mut m = Model::default();
+    let mut m = DummyModel::default();
     let v0 = m.add_variable();
     let v1 = m.add_variable();
     m.set_var_name(v0, "x").unwrap();
@@ -16,7 +16,7 @@ fn variables_and_names_are_stored() {
 
 #[test]
 fn add_constraint_returns_increasing_ids() {
-    let mut m = Model::default();
+    let mut m = DummyModel::default();
     let v = m.add_variable();
     let mut f = ScalarAffineFn::default();
     f.push_term(v, 2.0);

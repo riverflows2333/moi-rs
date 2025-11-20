@@ -1,4 +1,4 @@
 pub mod model;
 
-pub use model::Model;
+pub use model::DummyModel;
 pub use moi_core::variable::Variable;

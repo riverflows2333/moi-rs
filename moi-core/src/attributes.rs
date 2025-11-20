@@ -74,3 +74,38 @@ pub enum ConstraintAttribute {
 
 // 说明：目前仍保留旧的单 struct Attribute 定义方式以兼容现存代码。
 // 新枚举体系后续可以配套一个统一的 AttributeValue 枚举或映射表来存储异构值。
+
+/// 统一的属性值枚举，用于 UniversalFallback 中的异构存储。
+#[derive(Clone, Debug)]
+pub enum AttributeValue {
+    Sense(Sense),
+    Function,              // 占位：当前仅支持 Affine，可后续携带具体函数对象引用或 ID
+    USize(usize),
+    F64(f64),
+    Bool(bool),
+    String(String),
+    VarIndices(Vec<usize>),
+    TerminationStatus(String), // 简化: 使用字符串表示 SolveStatus
+    // 变量/约束属性
+    Primal(f64),
+    Slack(f64),
+    Dual(f64),
+}
+
+impl AttributeValue {
+    pub fn as_f64(&self) -> Option<f64> {
+        match self {
+            AttributeValue::F64(v)
+            | AttributeValue::Primal(v)
+            | AttributeValue::Slack(v)
+            | AttributeValue::Dual(v) => Some(*v),
+            _ => None,
+        }
+    }
+    pub fn as_usize(&self) -> Option<usize> {
+        match self { AttributeValue::USize(v) => Some(*v), _ => None }
+    }
+    pub fn as_str(&self) -> Option<&str> {
+        match self { AttributeValue::String(s) | AttributeValue::TerminationStatus(s) => Some(s), _ => None }
+    }
+}

@@ -1,7 +1,7 @@
 use moi_solver_api::ModelLike;
 
 fn main() {
-    let mut model = moi_model_dummy::Model::default();
+    let mut model = moi_model_dummy::DummyModel::default();
     let vars = model.add_variables(2);
 
     let mut f = moi_core::functions::ScalarAffineFn::default();
