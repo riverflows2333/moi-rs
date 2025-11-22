@@ -1,4 +1,4 @@
-use moi_core::attributes::{AttributeValue, ModelAttribute, OptimizerAttribute, VariableAttribute, ConstraintAttribute};
+use moi_core::Attribute; // use new unified Attribute API
 use moi_core::errors::MoiError;
 use moi_core::functions::{ScalarFunctionType, ScalarAffineFn};
 use moi_core::indices::{ConstrId, VarId};
@@ -96,19 +96,9 @@ where
         self.inner.supports_constraint(f, s)
     }
 
-    fn set_optimizer_attr(&mut self, a: OptimizerAttribute, v: AttributeValue) -> Result<(), MoiError> { self.inner.set_optimizer_attr(a, v) }
-    fn get_optimizer_attr(&self, a: &OptimizerAttribute) -> Option<&AttributeValue> { self.inner.get_optimizer_attr(a) }
-    fn set_model_attr(&mut self, a: ModelAttribute, v: AttributeValue) -> Result<(), MoiError> { self.inner.set_model_attr(a, v) }
-    fn get_model_attr(&self, a: &ModelAttribute) -> Option<AttributeValue> { self.inner.get_model_attr(a) }
-    fn set_variable_attr(&mut self, var: VarId, a: VariableAttribute, v: AttributeValue) -> Result<(), MoiError> { self.inner.set_variable_attr(var, a, v) }
-    fn get_variable_attr(&self, var: VarId, a: &VariableAttribute) -> Option<&AttributeValue> { self.inner.get_variable_attr(var, a) }
-    fn set_constraint_attr(&mut self, cid: ConstrId, a: ConstraintAttribute, v: AttributeValue) -> Result<(), MoiError> { self.inner.set_constraint_attr(cid, a, v) }
-    fn get_constraint_attr(&self, cid: ConstrId, a: &ConstraintAttribute) -> Option<&AttributeValue> { self.inner.get_constraint_attr(cid, a) }
-
-    fn supports_optimizer_attr(&self, attr: &OptimizerAttribute) -> bool { self.inner.supports_optimizer_attr(attr) }
-    fn supports_model_attr(&self, attr: &ModelAttribute) -> bool { self.inner.supports_model_attr(attr) }
-    fn supports_variable_attr(&self, attr: &VariableAttribute) -> bool { self.inner.supports_variable_attr(attr) }
-    fn supports_constraint_attr(&self, attr: &ConstraintAttribute) -> bool { self.inner.supports_constraint_attr(attr) }
+    fn supports<A: Attribute + 'static>(&self) -> bool { self.inner.supports::<A>() }
+    fn get<A: Attribute + 'static>(&self) -> Option<A::Value> { self.inner.get::<A>() }
+    fn set<A: Attribute + 'static>(&mut self, value: A::Value) -> Result<(), MoiError> { self.inner.set::<A>(value) }
 
     fn is_empty(&self) -> bool {
         self.inner.is_empty()

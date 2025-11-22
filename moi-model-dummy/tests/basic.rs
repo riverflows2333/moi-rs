@@ -1,4 +1,4 @@
-use moi_core::attributes::{Sense, ModelAttribute, AttributeValue};
+use moi_core::attributes::{ModelSense, ObjectiveSense};
 use moi_core::functions::{ScalarAffineFn, ScalarFunctionType};
 use moi_core::sets::ScalarSetType;
 use moi_model_dummy::DummyModel;
@@ -15,9 +15,9 @@ fn test_supports_affine_scalar_bounds() {
 #[test]
 fn test_set_get_attribute() {
     let mut model = DummyModel::default();
-    model.set_model_attr(ModelAttribute::ObjectiveSense, AttributeValue::Sense(Sense::Minimize)).unwrap();
-    let got = model.get_model_attr(&ModelAttribute::ObjectiveSense);
-    assert!(matches!(got, Some(AttributeValue::Sense(Sense::Minimize))));
+    model.set::<ObjectiveSense>(ModelSense::Minimize).unwrap();
+    let got = model.get::<ObjectiveSense>();
+    assert!(matches!(got, Some(ModelSense::Minimize)));
 }
 
 #[test]

@@ -1,98 +1,116 @@
-// 旧的 Attribute trait 保留但已不再使用，可后续删除
-pub trait Attribute { type Value: Clone + 'static; }
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub enum Sense { Minimize, Maximize }
-
-pub struct ObjectiveSense; impl Attribute for ObjectiveSense { type Value = Sense; }
-pub struct NumberOfVariables; impl Attribute for NumberOfVariables { type Value = usize; }
-pub struct NumberOfConstraints; impl Attribute for NumberOfConstraints { type Value = usize; }
-
-
-// 新的枚举分类属性体系（初始子集，后续可扩展）
-
-/// 求解器级别可配置 / 信息属性
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub enum OptimizerAttribute {
-    /// 求解器名称（只读）
-    SolverName,
-    /// 静默模式（可写）
-    Silent,
-}
-
-/// 模型级别属性：构建期 + 求解后只读 + 诊断
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub enum ModelAttribute {
-    // 构建期
-    ObjectiveSense,          // Sense
-    ObjectiveFunction,       // ScalarAffineFn (MVP) 后续可扩展为更一般函数
-    NumberOfVariables,       // usize
-    NumberOfConstraints,     // usize （暂不区分 (F,S) 类型细分）
-    ListOfVariableIndices,   // Vec<VarId> 或 Vec<usize>（占位）
-    Name,                    // String (模型名称)
-    // 求解后（只读）
-    TerminationStatus,       // SolveStatus
-    ResultCount,             // usize （可能用于多解场景占位）
-    ObjectiveValue,          // f64 (标量目标值)
-    // 诊断/易用
-    SolverName,              // 冗余映射到 OptimizerAttribute::SolverName
-    Silent,                  // 冗余映射到 OptimizerAttribute::Silent
-}
-
-/// 变量级别属性（按变量索引查询）；后续可加入 LowerBound/UpperBound 等
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub enum VariableAttribute {
-    /// 变量的原始值 (primal) after solve
-    Primal, // f64
-}
-
-/// 约束级别属性（后续可加入 Dual, Slack 等）；当前占位
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub enum ConstraintAttribute {
-    /// 约束的原始松弛量 (slack) after solve (占位)
-    Slack, // f64
-    /// 约束的对偶值 (dual) after solve (占位)
-    Dual,  // f64
-}
-
-
-
-// 说明：目前仍保留旧的单 struct Attribute 定义方式以兼容现存代码。
-// 新枚举体系后续可以配套一个统一的 AttributeValue 枚举或映射表来存储异构值。
-
 use crate::functions::ScalarAffineFn;
+use std::any::Any;
 
-/// 统一的属性值枚举：支持异构存储，MVP 聚焦标量仿射目标
-#[derive(Clone, Debug)]
-pub enum AttributeValue {
-    Sense(Sense),
-    Affine(ScalarAffineFn), // 目标函数（当前仅支持仿射）
-    USize(usize),
-    F64(f64),
-    Bool(bool),
-    String(String),
-    VarIndices(Vec<usize>),
-    TerminationStatus(String), // 简化: 使用字符串表示 SolveStatus
-    // 变量/约束属性
-    Primal(f64),
-    Slack(f64),
-    Dual(f64),
+// 核心属性 Trait：所有属性类型都是零尺寸标记类型（ZST），通过其关联类型 Value 指定值类型。
+pub trait Attribute {
+    type Value: Clone + 'static;
 }
 
-impl AttributeValue {
-    pub fn as_f64(&self) -> Option<f64> {
-        match self {
-            AttributeValue::F64(v)
-            | AttributeValue::Primal(v)
-            | AttributeValue::Slack(v)
-            | AttributeValue::Dual(v) => Some(*v),
-            _ => None,
-        }
-    }
-    pub fn as_usize(&self) -> Option<usize> {
-        match self { AttributeValue::USize(v) => Some(*v), _ => None }
-    }
-    pub fn as_str(&self) -> Option<&str> {
-        match self { AttributeValue::String(s) | AttributeValue::TerminationStatus(s) => Some(s), _ => None }
-    }
+// 标记 Trait：不同层级
+pub trait ModelAttribute: Attribute {}
+pub trait OptimizerAttribute: Attribute {}
+pub trait VariableAttribute: Attribute {}
+pub trait ConstraintAttribute: Attribute {}
+
+// 通用枚举替换为具体结构体属性定义 —— 更灵活可扩展
+
+// 求解相关枚举
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum ModelSense {
+    Minimize,
+    Maximize,
+}
+
+// 模型级别属性
+pub struct ObjectiveSense;
+impl Attribute for ObjectiveSense {
+    type Value = ModelSense;
+}
+impl ModelAttribute for ObjectiveSense {}
+pub struct ObjectiveFunction;
+impl Attribute for ObjectiveFunction {
+    type Value = ScalarAffineFn;
+}
+impl ModelAttribute for ObjectiveFunction {}
+pub struct ModelName;
+impl Attribute for ModelName {
+    type Value = String;
+}
+impl ModelAttribute for ModelName {}
+pub struct NumberOfVariables;
+impl Attribute for NumberOfVariables {
+    type Value = usize;
+}
+impl ModelAttribute for NumberOfVariables {}
+pub struct NumberOfConstraints;
+impl Attribute for NumberOfConstraints {
+    type Value = usize;
+}
+impl ModelAttribute for NumberOfConstraints {}
+pub struct ListOfVariableIndices;
+impl Attribute for ListOfVariableIndices {
+    type Value = Vec<usize>;
+}
+impl ModelAttribute for ListOfVariableIndices {}
+pub struct TerminationStatus;
+impl Attribute for TerminationStatus {
+    type Value = String;
+}
+impl ModelAttribute for TerminationStatus {}
+pub struct ResultCount;
+impl Attribute for ResultCount {
+    type Value = usize;
+}
+impl ModelAttribute for ResultCount {}
+pub struct ObjectiveValue;
+impl Attribute for ObjectiveValue {
+    type Value = f64;
+}
+impl ModelAttribute for ObjectiveValue {}
+
+// Optimizer 属性（可同时作为模型属性冗余映射）
+pub struct SolverName;
+impl Attribute for SolverName {
+    type Value = String;
+}
+impl OptimizerAttribute for SolverName {}
+impl ModelAttribute for SolverName {}
+pub struct Silent;
+impl Attribute for Silent {
+    type Value = bool;
+}
+impl OptimizerAttribute for Silent {}
+impl ModelAttribute for Silent {}
+pub struct TimeLimit;
+impl Attribute for TimeLimit {
+    type Value = f64;
+}
+impl OptimizerAttribute for TimeLimit {}
+impl ModelAttribute for TimeLimit {}
+
+// 变量级别属性
+pub struct Primal;
+impl Attribute for Primal {
+    type Value = f64;
+}
+impl VariableAttribute for Primal {}
+
+// 约束级别属性
+pub struct Slack;
+impl Attribute for Slack {
+    type Value = f64;
+}
+impl ConstraintAttribute for Slack {}
+pub struct Dual;
+impl Attribute for Dual {
+    type Value = f64;
+}
+impl ConstraintAttribute for Dual {}
+
+// 工具函数：从 Any 中按类型安全提取引用（内部使用）
+pub fn downcast_ref_value<V: 'static>(b: &Box<dyn Any>) -> Option<&V> {
+    b.downcast_ref::<V>()
+}
+pub fn into_box_value<V: 'static>(v: V) -> Box<dyn Any> {
+    Box::new(v)
 }

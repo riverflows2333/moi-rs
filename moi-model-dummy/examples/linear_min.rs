@@ -1,5 +1,5 @@
 use moi_solver_api::ModelLike;
-use moi_core::attributes::{ModelAttribute, AttributeValue};
+use moi_core::attributes::ObjectiveFunction;
 
 fn main() {
     let mut model = moi_model_dummy::DummyModel::default();
@@ -18,7 +18,9 @@ fn main() {
     let mut obj = moi_core::functions::ScalarAffineFn::default();
     obj.push_term(vars[0], 1.0);
     obj.push_term(vars[1], 2.0);
-    model.set_model_attr(ModelAttribute::ObjectiveFunction, AttributeValue::Affine(obj)).unwrap();
+    model.set::<ObjectiveFunction>(obj).unwrap();
 
     println!("example constructed OK");
+    let ret = model.get::<ObjectiveFunction>();
+    println!("Objective function: {:?}", ret);
 }
