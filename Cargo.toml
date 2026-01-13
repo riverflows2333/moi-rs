@@ -7,6 +7,7 @@ members = [
     "moi-bridge",
     "moi-cache",
     "moi-nlp",
-    "moi-utils",
+    "moi-utils", 
+    "moi-solver-gurobi",
 ]
 resolver = "2"

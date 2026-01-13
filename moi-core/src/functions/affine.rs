@@ -1,12 +1,12 @@
 use crate::indices::VarId;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug,PartialEq)]
 pub struct AffineTerm {
     pub var: VarId,
     pub coeff: f64,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default,PartialEq)]
 pub struct ScalarAffineFn {
     pub terms: Vec<AffineTerm>,
     pub constant: f64,

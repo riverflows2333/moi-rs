@@ -1,77 +1,31 @@
-use moi_core::attributes::{
-    downcast_ref_value, into_box_value, Dual, ListOfVariableIndices, NumberOfConstraints,
-    NumberOfVariables, ObjectiveFunction, Primal, Silent, Slack, SolverName,
-};
+use moi_core::attributes::{AttrValue, ConstraintAttr, ModelAttr, OptimizerAttr, VariableAttr};
 use moi_core::errors::MoiError;
-use moi_core::functions::ScalarAffineFn;
-use moi_core::functions::ScalarFunctionType;
+use moi_core::functions::{ScalarAffineFn, ScalarFunctionType};
 use moi_core::indices::{ConstrId, VarId};
 use moi_core::sets::ScalarSetType;
-use moi_solver_api::{ModelLike, Optimizer};
-use std::any::Any;
-use std::any::TypeId;
+use moi_solver_api::{ModelLike, Optimizer, SolveStatus};
 use std::collections::HashMap;
 
 use moi_core::constraint::ScalarConstraint;
 use moi_core::variable::Variable;
-// unified: no fallback wrapper
 
 #[derive(Default)]
 pub struct DummyModel {
-    // core storage
-    // removed counters & generic attr box storage
-    name: String, // reserved for future naming attributes
+    name: String,
     variables: Vec<Variable>,
     constraints: Vec<ScalarConstraint>,
+    obj: Option<ScalarAffineFn>,
     var_to_name: HashMap<usize, String>,
     name_to_var: HashMap<String, VarId>,
     con_to_name: HashMap<usize, String>,
     name_to_con: HashMap<String, usize>,
-    // unified attribute store (non-derived)
-    attr_store: HashMap<TypeId, Box<dyn Any>>,
+
+    // Separate attribute stores
+    model_attrs: HashMap<ModelAttr, AttrValue>,
+    optimizer_attrs: HashMap<OptimizerAttr, AttrValue>,
 }
 
 impl DummyModel {
-    fn derived_get<A: moi_core::Attribute + 'static>(&self) -> Option<A::Value> {
-        let tid = TypeId::of::<A>();
-        if tid == TypeId::of::<NumberOfVariables>() {
-            let v = self.variables.len();
-            let ptr = &v as *const usize as *const A::Value;
-            unsafe {
-                return Some((*ptr).clone());
-            }
-        }
-        if tid == TypeId::of::<NumberOfConstraints>() {
-            let v = self.constraints.len();
-            let ptr = &v as *const usize as *const A::Value;
-            unsafe {
-                return Some((*ptr).clone());
-            }
-        }
-        if tid == TypeId::of::<ListOfVariableIndices>() {
-            let list: Vec<usize> = (0..self.variables.len()).collect();
-            let ptr = &list as *const Vec<usize> as *const A::Value;
-            unsafe {
-                return Some((*ptr).clone());
-            }
-        }
-        if tid == TypeId::of::<SolverName>() {
-            return self
-                .attr_store
-                .get(&tid)
-                .and_then(downcast_ref_value::<A::Value>)
-                .cloned();
-        }
-        if tid == TypeId::of::<Silent>() {
-            return self
-                .attr_store
-                .get(&tid)
-                .and_then(downcast_ref_value::<A::Value>)
-                .cloned();
-        }
-        None
-    }
-
     // variable naming helpers (restored)
     pub fn set_var_name<S: Into<String>>(&mut self, v: VarId, name: S) -> Result<(), MoiError> {
         let idx = v.0;
@@ -124,52 +78,82 @@ impl ModelLike for DummyModel {
                     | ScalarSetType::Interval(..)
             )
     }
+
     // unified attribute APIs
-    fn supports<A: moi_core::Attribute + 'static>(&self) -> bool {
-        let tid = TypeId::of::<A>();
-        // mark unsupported per-variable/constraint attributes (old Primal/Slack/Dual) since API lacks indexing
-        if tid == TypeId::of::<Primal>()
-            || tid == TypeId::of::<Slack>()
-            || tid == TypeId::of::<Dual>()
-        {
-            return false;
-        }
-        true
-    }
-    fn get<A: moi_core::Attribute + 'static>(&self) -> Option<A::Value> {
-        // derived first
-        if let Some(v) = self.derived_get::<A>() {
-            return Some(v);
-        }
-        self.attr_store
-            .get(&TypeId::of::<A>())
-            .and_then(downcast_ref_value::<A::Value>)
-            .cloned()
-    }
-    fn set<A: moi_core::Attribute + 'static>(
-        &mut self,
-        mut value: A::Value,
-    ) -> Result<(), MoiError> {
-        let tid = TypeId::of::<A>();
-        if !self.supports::<A>() {
-            return Err(MoiError::UnsupportedAttribute);
-        }
-        // derived read-only guard
-        if tid == TypeId::of::<NumberOfVariables>()
-            || tid == TypeId::of::<NumberOfConstraints>()
-            || tid == TypeId::of::<ListOfVariableIndices>()
-        {
-            return Err(MoiError::SetAttributeNotAllowed);
-        }
-        if tid == TypeId::of::<ObjectiveFunction>() {
-            let f = &mut value as *mut A::Value as *mut ScalarAffineFn;
-            unsafe {
-                (*f).simplify();
+    fn get_model_attr(&self, attr: ModelAttr) -> Option<AttrValue> {
+        match attr {
+            ModelAttr::NumberOfVariables => Some(AttrValue::Usize(self.variables.len())),
+            ModelAttr::NumberOfConstraints => Some(AttrValue::Usize(self.constraints.len())),
+            ModelAttr::ListOfVariableIndices => {
+                let list: Vec<usize> = (0..self.variables.len()).collect();
+                Some(AttrValue::VecUsize(list))
             }
+            ModelAttr::ObjectiveFunction => self.obj.clone().map(AttrValue::ScalarAffineFn),
+            _ => self.model_attrs.get(&attr).cloned(),
         }
-        self.attr_store.insert(tid, into_box_value(value));
+    }
+
+    fn set_model_attr(&mut self, attr: ModelAttr, mut value: AttrValue) -> Result<(), MoiError> {
+        // derived read-only check
+        match attr {
+            ModelAttr::NumberOfVariables
+            | ModelAttr::NumberOfConstraints
+            | ModelAttr::ListOfVariableIndices => {
+                return Err(MoiError::SetAttributeNotAllowed);
+            }
+            ModelAttr::ObjectiveFunction => {
+                if let AttrValue::ScalarAffineFn(ref mut f) = value {
+                    f.simplify();
+                    self.obj = Some(f.clone());
+                }
+                // We update the specific field but also allow storing it if useful,
+                // though derived get logic prefers the field.
+            }
+            _ => {}
+        }
+        self.model_attrs.insert(attr, value);
         Ok(())
     }
+
+    fn get_optimizer_attr(&self, attr: OptimizerAttr) -> Option<AttrValue> {
+        self.optimizer_attrs.get(&attr).cloned()
+    }
+
+    fn set_optimizer_attr(
+        &mut self,
+        attr: OptimizerAttr,
+        value: AttrValue,
+    ) -> Result<(), MoiError> {
+        self.optimizer_attrs.insert(attr, value);
+        Ok(())
+    }
+
+    fn get_variable_attr(&self, _attr: VariableAttr, _v: VarId) -> Option<AttrValue> {
+        None
+    }
+
+    fn set_variable_attr(
+        &mut self,
+        _attr: VariableAttr,
+        _v: VarId,
+        _value: AttrValue,
+    ) -> Result<(), MoiError> {
+        Err(MoiError::UnsupportedAttribute)
+    }
+
+    fn get_constraint_attr(&self, _attr: ConstraintAttr, _c: ConstrId) -> Option<AttrValue> {
+        None
+    }
+
+    fn set_constraint_attr(
+        &mut self,
+        _attr: ConstraintAttr,
+        _c: ConstrId,
+        _value: AttrValue,
+    ) -> Result<(), MoiError> {
+        Err(MoiError::UnsupportedAttribute)
+    }
+
     // objective & housekeeping
     fn is_empty(&self) -> bool {
         self.variables.is_empty() && self.constraints.is_empty()
@@ -181,7 +165,8 @@ impl ModelLike for DummyModel {
         self.con_to_name.clear();
         self.name_to_con.clear();
         self.constraints.clear();
-        self.attr_store.clear();
+        self.model_attrs.clear();
+        self.optimizer_attrs.clear();
     }
 
     // 支持查询：统一版本已在 supports 泛型中实现

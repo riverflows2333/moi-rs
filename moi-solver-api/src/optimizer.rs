@@ -1,4 +1,4 @@
-use moi_core::Attribute;
+use moi_core::attributes::{AttrValue, ConstraintAttr, ModelAttr, OptimizerAttr, VariableAttr};
 
 use moi_core::errors::MoiError;
 use moi_core::functions::ScalarFunctionType;
@@ -12,17 +12,37 @@ pub trait ModelLike {
     fn add_constraint(&mut self, f: ScalarFunctionType, s: ScalarSetType) -> ConstrId;
 
     fn supports_constraint(&self, f: &ScalarFunctionType, s: &ScalarSetType) -> bool;
-    fn supports<A: Attribute + 'static>(&self) -> bool;
-    // Attribute support queries (generic)
 
-    // Generic attribute APIs
-    fn get<A: Attribute + 'static>(&self) -> Option<A::Value>;
-    fn set<A: Attribute + 'static>(&mut self, value: A::Value) -> Result<(), MoiError>;
+    // Attribute support queries (generic)
+    // Model attributes
+    fn get_model_attr(&self, attr: ModelAttr) -> Option<AttrValue>;
+    fn set_model_attr(&mut self, attr: ModelAttr, value: AttrValue) -> Result<(), MoiError>;
+
+    // Optimizer attributes
+    fn get_optimizer_attr(&self, attr: OptimizerAttr) -> Option<AttrValue>;
+    fn set_optimizer_attr(&mut self, attr: OptimizerAttr, value: AttrValue)
+        -> Result<(), MoiError>;
+
+    // Variable attributes (optional ID associated)
+    fn get_variable_attr(&self, attr: VariableAttr, v: VarId) -> Option<AttrValue>;
+    fn set_variable_attr(
+        &mut self,
+        attr: VariableAttr,
+        v: VarId,
+        value: AttrValue,
+    ) -> Result<(), MoiError>;
+
+    // Constraint attributes
+    fn get_constraint_attr(&self, attr: ConstraintAttr, c: ConstrId) -> Option<AttrValue>;
+    fn set_constraint_attr(
+        &mut self,
+        attr: ConstraintAttr,
+        c: ConstrId,
+        value: AttrValue,
+    ) -> Result<(), MoiError>;
 
     fn is_empty(&self) -> bool;
     fn empty(&mut self);
-
-    // Objective 现在通过 ModelAttribute::ObjectiveFunction + AttributeValue::Affine 处理
 }
 
 pub trait Optimizer: ModelLike {

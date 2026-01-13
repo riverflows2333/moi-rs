@@ -1,4 +1,6 @@
-use moi_core::Attribute; // use new unified Attribute API
+use moi_core::attributes::{
+    AttrValue, ConstraintAttr, ModelAttr, OptimizerAttr, VariableAttr,
+};
 use moi_core::errors::MoiError;
 use moi_core::functions::{ScalarFunctionType, ScalarAffineFn};
 use moi_core::indices::{ConstrId, VarId};
@@ -96,9 +98,52 @@ where
         self.inner.supports_constraint(f, s)
     }
 
-    fn supports<A: Attribute + 'static>(&self) -> bool { self.inner.supports::<A>() }
-    fn get<A: Attribute + 'static>(&self) -> Option<A::Value> { self.inner.get::<A>() }
-    fn set<A: Attribute + 'static>(&mut self, value: A::Value) -> Result<(), MoiError> { self.inner.set::<A>(value) }
+    fn get_model_attr(&self, attr: ModelAttr) -> Option<AttrValue> {
+        self.inner.get_model_attr(attr)
+    }
+
+    fn set_model_attr(&mut self, attr: ModelAttr, value: AttrValue) -> Result<(), MoiError> {
+        self.inner.set_model_attr(attr, value)
+    }
+
+    fn get_optimizer_attr(&self, attr: OptimizerAttr) -> Option<AttrValue> {
+        self.inner.get_optimizer_attr(attr)
+    }
+
+    fn set_optimizer_attr(
+        &mut self,
+        attr: OptimizerAttr,
+        value: AttrValue,
+    ) -> Result<(), MoiError> {
+        self.inner.set_optimizer_attr(attr, value)
+    }
+
+    fn get_variable_attr(&self, attr: VariableAttr, v: VarId) -> Option<AttrValue> {
+        self.inner.get_variable_attr(attr, v)
+    }
+
+    fn set_variable_attr(
+        &mut self,
+        attr: VariableAttr,
+        v: VarId,
+        value: AttrValue,
+    ) -> Result<(), MoiError> {
+        self.inner.set_variable_attr(attr, v, value)
+    }
+
+    fn get_constraint_attr(&self, attr: ConstraintAttr, c: ConstrId) -> Option<AttrValue> {
+        self.inner.get_constraint_attr(attr, c)
+    }
+
+    fn set_constraint_attr(
+        &mut self,
+        attr: ConstraintAttr,
+        c: ConstrId,
+        value: AttrValue,
+    ) -> Result<(), MoiError> {
+        self.inner.set_constraint_attr(attr, c, value)
+    }
+
 
     fn is_empty(&self) -> bool {
         self.inner.is_empty()
