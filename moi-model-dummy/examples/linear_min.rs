@@ -1,5 +1,5 @@
 use moi_solver_api::ModelLike;
-use moi_core::attributes::ObjectiveFunction;
+use moi_core::attributes::ModelAttr;
 
 fn main() {
     let mut model = moi_model_dummy::DummyModel::default();
@@ -16,11 +16,11 @@ fn main() {
 
     // set objective via attribute: minimize x + 2y
     let mut obj = moi_core::functions::ScalarAffineFn::default();
-    obj.push_term(vars[0], 1.0);
-    obj.push_term(vars[1], 2.0);
-    model.set::<ObjectiveFunction>(obj).unwrap();
+    obj.push_term(vars[0], 3.0);
+    obj.push_term(vars[1], 5.0);
+    model.set_model_attr(ModelAttr::ObjectiveFunction, obj.into()).unwrap();
 
     println!("example constructed OK");
-    let ret = model.get::<ObjectiveFunction>();
+    let ret = model.get_model_attr(ModelAttr::ObjectiveFunction);
     println!("Objective function: {:?}", ret);
 }
