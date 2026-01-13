@@ -89,6 +89,7 @@ impl ModelLike for DummyModel {
                 Some(AttrValue::VecUsize(list))
             }
             ModelAttr::ObjectiveFunction => self.obj.clone().map(AttrValue::ScalarAffineFn),
+            ModelAttr::ModelName => Some(AttrValue::String(self.name.clone())),
             _ => self.model_attrs.get(&attr).cloned(),
         }
     }
@@ -108,6 +109,11 @@ impl ModelLike for DummyModel {
                 }
                 // We update the specific field but also allow storing it if useful,
                 // though derived get logic prefers the field.
+            }
+            ModelAttr::ModelName => {
+                if let AttrValue::String(ref name) = value {
+                    self.name = name.clone();
+                }
             }
             _ => {}
         }
