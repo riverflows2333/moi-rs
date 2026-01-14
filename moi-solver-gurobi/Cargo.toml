@@ -8,3 +8,5 @@ path = "src/lib.rs"
 
 [dependencies]
 libloading = "0.9.0"
+moi-core = { path = "../moi-core" }
+moi-solver-api = { path = "../moi-solver-api" }
