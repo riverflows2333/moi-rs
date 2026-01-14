@@ -9,6 +9,7 @@ pub struct GurobiApi {
     // environment functions
     pub GRBloadenv:
         unsafe extern "C" fn(env: *mut *mut c_void, logfilename: *const c_char) -> c_int,
+    pub GRBstartenv: unsafe extern "C" fn(env: *mut c_void) -> c_int,
     pub GRBfreeenv: unsafe extern "C" fn(env: *mut *mut c_void) -> c_int,
     // model functions
     pub GRBnewmodel: unsafe extern "C" fn(
@@ -23,6 +24,32 @@ pub struct GurobiApi {
         varnames: *const *const c_char,
     ) -> c_int,
     pub GRBfreemodel: unsafe extern "C" fn(model: *mut *mut c_void) -> c_int,
+    // var functions
+    pub GRBaddvar: unsafe extern "C" fn(
+        model: *mut c_void,
+        numnz: c_int,
+        vind: *const c_int,
+        vval: *const c_double,
+        obj: c_double,
+        lb: c_double,
+        ub: c_double,
+        vtype: c_char,
+        varname: *const c_char,
+    ) -> c_int,
+
+    pub GRBaddvars: unsafe extern "C" fn(
+        model: *mut c_void,
+        numvars: c_int,
+        numnz: c_int,
+        vbeg: *const c_int,
+        vind: *const c_int,
+        vval: *const c_double,
+        obj: *const c_double,
+        lb: *const c_double,
+        ub: *const c_double,
+        vtype: *const c_char,
+        varnames: *const *const c_char,
+    ) -> c_int,
     pub GRBoptimize: unsafe extern "C" fn(model: *mut c_void) -> c_int,
 }
 
@@ -31,10 +58,13 @@ impl GurobiApi {
         unsafe {
             let lib = Library::new(lib_path)?;
             Ok(Self {
+                GRBstartenv: *lib.get(b"GRBstartenv")?,
                 GRBloadenv: *lib.get(b"GRBloadenv")?,
                 GRBfreeenv: *lib.get(b"GRBfreeenv")?,
                 GRBnewmodel: *lib.get(b"GRBnewmodel")?,
                 GRBfreemodel: *lib.get(b"GRBfreemodel")?,
+                GRBaddvar: *lib.get(b"GRBaddvar")?,
+                GRBaddvars: *lib.get(b"GRBaddvars")?,
                 GRBoptimize: *lib.get(b"GRBoptimize")?,
                 _lib: lib,
             })
