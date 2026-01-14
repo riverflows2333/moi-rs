@@ -3,9 +3,10 @@ use std::path::{Path, PathBuf};
 
 pub fn find_library() -> Option<PathBuf> {
     // 首先检查环境变量
-    // if let Some(path) = check_env_var() {
-    //     return Some();
-    // }
+    if let Some(path) = check_env_var() {
+        let lib_path = find_library_from(path.to_str().unwrap().to_string());
+        lib_path.map(|p| return p);
+    }
     None
 }
 //
@@ -52,5 +53,10 @@ mod tests {
     fn test_find_library_from_path() {
         let lib_path = find_library_from("/usr/local/gurobi1203".to_string());
         println!("{:?}", lib_path);
+    }
+    #[test]
+    fn test_find_env_var() {
+        let path = check_env_var();
+        println!("{:?}", path);
     }
 }
