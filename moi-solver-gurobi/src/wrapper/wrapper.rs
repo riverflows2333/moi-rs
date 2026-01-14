@@ -2,6 +2,7 @@ use crate::dynamic::api::GurobiApi;
 use moi_solver_api::Optimizer;
 use std::ffi::c_void;
 use std::sync::Arc;
+use crate::bindings::*;
 pub struct GurobiSolver {
     api: Arc<GurobiApi>,
     env: *mut c_void,

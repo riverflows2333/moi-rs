@@ -1,17 +1,60 @@
+use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-pub fn find_library() -> Option<PathBuf> {
-    // 首先检查环境变量
-    if let Some(path) = check_env_var() {
-        let lib_path = find_library_from(path.to_str().unwrap().to_string());
-        lib_path.map(|p| return p);
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct GurobiVersion {
+    pub major: u32,
+    pub minor: u32,
+    pub technical: u32, // often 0 in filename
+}
+
+impl ToString for GurobiVersion {
+    fn to_string(&self) -> String {
+        format!("{}{}", self.major, self.minor)
     }
+}
+
+pub fn find_library() -> Option<(PathBuf, String)> {
+    // Check environment variable first
+    if let Some(path_str) = env::var("GUROBI_HOME").ok() {
+        let path = PathBuf::from(path_str);
+        if let Some((lib_path, version)) = find_library_in_path(&path) {
+            return Some((lib_path, version));
+        }
+    }
+
+    // Try standard system paths if not found in env
+    #[cfg(target_os = "linux")]
+    {
+        for path in &["/opt", "/usr/local", "/usr/local/gurobi1203"] {
+            if let Some((lib_path, version)) = find_library_in_path(&PathBuf::from(path)) {
+                return Some((lib_path, version));
+            }
+        }
+    }
+
+    // Additional heuristics can be added here
     None
 }
-//
+
+/// Helper to ensure running against correct binding version.
+/// This doesn't change imports, but can be used for runtime validation.
+/// Expected format: "120"
+pub fn vers_match(detected: &str, expected: &str) -> bool {
+    detected == expected
+}
+
 pub fn find_library_from(path: String) -> Option<PathBuf> {
-    let lib_path = format!("{}/lib", path);
+    find_library_in_path(&PathBuf::from(path)).map(|(p, _)| p)
+}
+
+fn find_library_in_path(base_path: &Path) -> Option<(PathBuf, String)> {
+    let lib_dir = base_path.join("lib");
+    if !lib_dir.exists() {
+        return None;
+    }
+
     let suffix = if cfg!(target_os = "windows") {
         "dll"
     } else if cfg!(target_os = "macos") {
@@ -19,44 +62,61 @@ pub fn find_library_from(path: String) -> Option<PathBuf> {
     } else {
         "so"
     };
-    // 查找路径下的libgurobi动态库文件
-    let entries = fs::read_dir(&lib_path).unwrap();
-    for entry in entries {
-        let entry = entry.unwrap();
+
+    let entries = fs::read_dir(&lib_dir).ok()?;
+    for entry in entries.flatten() {
         let path = entry.path();
-        let file_name = path.file_name().unwrap().to_str().unwrap();
-        if file_name.contains("gurobi") && file_name.ends_with(suffix) {
-            return Some(path);
+        if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
+            if file_name.contains("gurobi")
+                && file_name.ends_with(suffix)
+                && !file_name.contains("_light")
+            {
+                if let Some(version) = parse_version_from_filename(file_name) {
+                    return Some((path, version));
+                }
+            }
         }
     }
     None
 }
 
-fn check_env_var() -> Option<PathBuf> {
-    std::env::var("GUROBI_HOME").ok().map(|p| PathBuf::from(p))
-}
-
-fn get_library_name(version: &str) -> String {
-    if cfg!(target_os = "windows") {
-        format!("gurobi{}.dll", version)
-    } else if cfg!(target_os = "macos") {
-        format!("libgurobi{}.dylib", version)
-    } else {
-        format!("libgurobi{}.so", version)
+fn parse_version_from_filename(filename: &str) -> Option<String> {
+    // format like libgurobi120.so or gurobi120.dll
+    // extract digits '120'
+    let digits: String = filename.chars().filter(|c| c.is_ascii_digit()).collect();
+    if digits.is_empty() {
+        return None;
     }
+    // Simplistic: Use the digit string as the version identifier (e.g. "120")
+    // This matches the module name gen120
+    Some(digits)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     #[test]
-    fn test_find_library_from_path() {
-        let lib_path = find_library_from("/usr/local/gurobi1203".to_string());
-        println!("{:?}", lib_path);
+    fn test_find_library_with_version() {
+        if let Some((path, ver)) = find_library() {
+            println!("Found Gurobi: {:?} version {}", path, ver);
+        } else {
+            println!("Gurobi not found in env");
+        }
     }
+
     #[test]
-    fn test_find_env_var() {
-        let path = check_env_var();
-        println!("{:?}", path);
+    fn test_parse_version() {
+        assert_eq!(
+            parse_version_from_filename("libgurobi120.so"),
+            Some("120".to_string())
+        );
+        assert_eq!(
+            parse_version_from_filename("gurobi120.dll"),
+            Some("120".to_string())
+        );
+        assert_eq!(
+            parse_version_from_filename("libgurobi90.dylib"),
+            Some("90".to_string())
+        );
     }
 }
