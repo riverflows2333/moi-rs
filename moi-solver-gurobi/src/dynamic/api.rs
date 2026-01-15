@@ -80,11 +80,8 @@ pub struct GurobiApi {
         valueP: *mut c_int,
     ) -> c_int,
 
-    pub GRBsetintattr: unsafe extern "C" fn(
-        model: *mut c_void,
-        attrname: *const c_char,
-        newvalue: c_int,
-    ) -> c_int,
+    pub GRBsetintattr:
+        unsafe extern "C" fn(model: *mut c_void, attrname: *const c_char, newvalue: c_int) -> c_int,
 
     pub GRBgetdblattr: unsafe extern "C" fn(
         model: *mut c_void,

@@ -1,0 +1,88 @@
+use moi_solver_gurobi::dynamic::api::GurobiApi;
+use moi_solver_gurobi::bindings::*;
+use std::path::PathBuf;
+use std::ffi::{c_char, c_double, c_int, c_void};
+use std::ptr::{null_mut,null};
+#[test]
+fn test_load_gurobi_api() {
+    let gurobi_api =
+        GurobiApi::new(PathBuf::from("/usr/local/gurobi1203/lib/libgurobi120.so"));
+    assert!(gurobi_api.is_ok());
+}
+
+#[test]
+fn test_api_mip(){
+    let api =
+        GurobiApi::new(PathBuf::from("/usr/local/gurobi1203/lib/libgurobi120.so")).unwrap();
+    unsafe {
+        let mut ret = 0;
+        // 创建环境
+        let mut env: *mut c_void = null_mut();
+        ret = (api.GRBloadenv)(&mut env as *mut *mut c_void, null());
+        assert_eq!(ret, 0);
+        // 创建模型
+        let mut model: *mut c_void = null_mut();
+        ret = (api.GRBnewmodel)(
+            env,
+            &mut model as *mut *mut c_void,
+            b"test_model\0".as_ptr() as *const c_char,
+            0,
+            null(),
+            null(),
+            null(),
+            null(),
+            null(),
+        );
+        assert_eq!(ret, 0);
+        let obj = [1.,1.,2.];
+        // 添加变量
+        let vtype = [GRB_BINARY,GRB_BINARY,GRB_BINARY];
+        ret = (api.GRBaddvars)(
+            model,
+            3,
+            0,
+            null(),
+            null(),
+            null(),
+            obj.as_ptr(),
+            null(),
+            null(),
+            vtype.as_ptr() as *const i8,
+            null(),
+        );
+        assert_eq!(ret, 0);
+        // 最大化
+        ret = (api.GRBsetintattr)(model, GRB_INT_ATTR_MODELSENSE.as_ptr() as *const c_char, GRB_MAXIMIZE);
+        assert_eq!(ret, 0);
+        // 添加约束
+        let ind = [0,1,2];
+        let val = [1.,2.,3.];
+        ret = (api.GRBaddconstr)(
+            model,
+            3,
+            ind.as_ptr(),
+            val.as_ptr(),
+            GRB_LESS_EQUAL as i8,
+            4.,
+            "c0".as_ptr() as *const c_char,
+        );
+        assert_eq!(ret, 0);
+        let ind = [0,1];
+        let val = [1.,1.];
+        ret = (api.GRBaddconstr)(
+            model,
+            2,
+            ind.as_ptr(),
+            val.as_ptr(),
+            GRB_GREATER_EQUAL as i8,
+            1.,
+            "c1".as_ptr() as *const c_char,
+        );
+        assert_eq!(ret, 0);
+        // 优化 
+        ret = (api.GRBoptimize)(model);
+        assert_eq!(ret, 0);
+
+
+    }
+}

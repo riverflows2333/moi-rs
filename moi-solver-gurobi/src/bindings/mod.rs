@@ -8,3 +8,5 @@ use gen120 as sys;
 
 #[cfg(feature = "gurobi130")]
 use gen130 as sys;
+
+pub use sys::*;
