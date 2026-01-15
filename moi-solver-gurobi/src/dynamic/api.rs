@@ -10,7 +10,7 @@ pub struct GurobiApi {
     pub GRBloadenv:
         unsafe extern "C" fn(env: *mut *mut c_void, logfilename: *const c_char) -> c_int,
     pub GRBstartenv: unsafe extern "C" fn(env: *mut c_void) -> c_int,
-    pub GRBfreeenv: unsafe extern "C" fn(env: *mut *mut c_void) -> c_int,
+    pub GRBfreeenv: unsafe extern "C" fn(env: *mut c_void),
     // model functions
     pub GRBnewmodel: unsafe extern "C" fn(
         env: *mut c_void,
@@ -23,7 +23,7 @@ pub struct GurobiApi {
         vtype: *const c_char,
         varnames: *const *const c_char,
     ) -> c_int,
-    pub GRBfreemodel: unsafe extern "C" fn(model: *mut *mut c_void) -> c_int,
+    pub GRBfreemodel: unsafe extern "C" fn(model: *mut c_void) -> c_int,
     // var functions
     pub GRBaddvar: unsafe extern "C" fn(
         model: *mut c_void,
