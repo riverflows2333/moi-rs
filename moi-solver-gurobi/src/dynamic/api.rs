@@ -95,6 +95,14 @@ pub struct GurobiApi {
         newvalue: c_double,
     ) -> c_int,
 
+    pub GRBgetdblattrarray: unsafe extern "C" fn(
+        model: *mut c_void,
+        attrname: *const c_char,
+        start: c_int,
+        len: c_int,
+        values: *mut c_double,
+    ) -> c_int,
+
     pub GRBgetstrattr: unsafe extern "C" fn(
         model: *mut c_void,
         attrname: *const c_char,
@@ -129,6 +137,7 @@ impl GurobiApi {
                 GRBsetintattr: *lib.get(b"GRBsetintattr")?,
                 GRBgetdblattr: *lib.get(b"GRBgetdblattr")?,
                 GRBsetdblattr: *lib.get(b"GRBsetdblattr")?,
+                GRBgetdblattrarray: *lib.get(b"GRBgetdblattrarray")?,
                 GRBgetstrattr: *lib.get(b"GRBgetstrattr")?,
                 GRBsetstrattr: *lib.get(b"GRBsetstrattr")?,
                 GRBoptimize: *lib.get(b"GRBoptimize")?,
