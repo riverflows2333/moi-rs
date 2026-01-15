@@ -73,6 +73,43 @@ pub struct GurobiApi {
         rhs: *const c_double,
         constrnames: *const *const c_char,
     ) -> c_int,
+    // attr functions
+    pub GRBgetintattr: unsafe extern "C" fn(
+        model: *mut c_void,
+        attrname: *const c_char,
+        valueP: *mut c_int,
+    ) -> c_int,
+
+    pub GRBsetintattr: unsafe extern "C" fn(
+        model: *mut c_void,
+        attrname: *const c_char,
+        newvalue: c_int,
+    ) -> c_int,
+
+    pub GRBgetdblattr: unsafe extern "C" fn(
+        model: *mut c_void,
+        attrname: *const c_char,
+        valueP: *mut c_double,
+    ) -> c_int,
+
+    pub GRBsetdblattr: unsafe extern "C" fn(
+        model: *mut c_void,
+        attrname: *const c_char,
+        newvalue: c_double,
+    ) -> c_int,
+
+    pub GRBgetstrattr: unsafe extern "C" fn(
+        model: *mut c_void,
+        attrname: *const c_char,
+        valueP: *mut *mut c_char,
+    ) -> c_int,
+
+    pub GRBsetstrattr: unsafe extern "C" fn(
+        model: *mut c_void,
+        attrname: *const c_char,
+        newvalue: *const c_char,
+    ) -> c_int,
+
     // optimize functions
     pub GRBoptimize: unsafe extern "C" fn(model: *mut c_void) -> c_int,
 }
@@ -91,6 +128,12 @@ impl GurobiApi {
                 GRBaddvars: *lib.get(b"GRBaddvars")?,
                 GRBaddconstr: *lib.get(b"GRBaddconstr")?,
                 GRBaddconstrs: *lib.get(b"GRBaddconstrs")?,
+                GRBgetintattr: *lib.get(b"GRBgetintattr")?,
+                GRBsetintattr: *lib.get(b"GRBsetintattr")?,
+                GRBgetdblattr: *lib.get(b"GRBgetdblattr")?,
+                GRBsetdblattr: *lib.get(b"GRBsetdblattr")?,
+                GRBgetstrattr: *lib.get(b"GRBgetstrattr")?,
+                GRBsetstrattr: *lib.get(b"GRBsetstrattr")?,
                 GRBoptimize: *lib.get(b"GRBoptimize")?,
                 _lib: lib,
             })
