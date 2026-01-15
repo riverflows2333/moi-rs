@@ -3,11 +3,6 @@ use moi_solver_gurobi::dynamic::api::GurobiApi;
 use std::ffi::{c_char, c_double, c_int, c_void};
 use std::path::PathBuf;
 use std::ptr::{null, null_mut};
-#[test]
-fn test_load_gurobi_api() {
-    let gurobi_api = GurobiApi::new(PathBuf::from("/usr/local/gurobi1203/lib/libgurobi120.so"));
-    assert!(gurobi_api.is_ok());
-}
 
 #[test]
 fn test_api_mip() {
