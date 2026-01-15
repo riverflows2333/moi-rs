@@ -82,6 +82,20 @@ fn test_api_mip(){
         // 优化 
         ret = (api.GRBoptimize)(model);
         assert_eq!(ret, 0);
+        // 求解信息
+        let mut status = 0;
+        ret = (api.GRBgetintattr)(model, GRB_INT_ATTR_STATUS.as_ptr() as *const c_char, &mut status);
+        assert_eq!(ret, 0);
+        let mut objval: c_double = 0.;
+        ret = (api.GRBgetdblattr)(model, GRB_DBL_ATTR_OBJVAL.as_ptr() as *const c_char, &mut objval as *mut c_double);
+        assert_eq!(ret, 0);
+        if status as u32 == GRB_OPTIMAL {
+            println!("Optimal objective value: {}", objval);
+        } else {
+            panic!("No optimal solution found");
+        }
+        
+
 
 
     }
