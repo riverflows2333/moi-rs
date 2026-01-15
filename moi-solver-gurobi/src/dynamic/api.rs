@@ -50,6 +50,30 @@ pub struct GurobiApi {
         vtype: *const c_char,
         varnames: *const *const c_char,
     ) -> c_int,
+
+    // constr functions
+    pub GRBaddconstr: unsafe extern "C" fn(
+        model: *mut c_void,
+        numnz: c_int,
+        cind: *const c_int,
+        cval: *const c_double,
+        sense: c_char,
+        rhs: c_double,
+        constrname: *const c_char,
+    ) -> c_int,
+
+    pub GRBaddconstrs: unsafe extern "C" fn(
+        model: *mut c_void,
+        numconstrs: c_int,
+        numnz: c_int,
+        cbeg: *const c_int,
+        cind: *const c_int,
+        cval: *const c_double,
+        sense: *const c_char,
+        rhs: *const c_double,
+        constrnames: *const *const c_char,
+    ) -> c_int,
+    // optimize functions
     pub GRBoptimize: unsafe extern "C" fn(model: *mut c_void) -> c_int,
 }
 
@@ -65,6 +89,8 @@ impl GurobiApi {
                 GRBfreemodel: *lib.get(b"GRBfreemodel")?,
                 GRBaddvar: *lib.get(b"GRBaddvar")?,
                 GRBaddvars: *lib.get(b"GRBaddvars")?,
+                GRBaddconstr: *lib.get(b"GRBaddconstr")?,
+                GRBaddconstrs: *lib.get(b"GRBaddconstrs")?,
                 GRBoptimize: *lib.get(b"GRBoptimize")?,
                 _lib: lib,
             })
