@@ -109,5 +109,7 @@ fn test_api_mip() {
         } else {
             panic!("No optimal solution found");
         }
+    (api.GRBfreemodel)(model);
+    (api.GRBfreeenv)(env);
     }
 }
