@@ -11,6 +11,7 @@ pub struct GurobiOptimizer {
     env: *mut c_void,
     model: *mut c_void,
     needs_update: bool,
+    sense: Option<i32>,
     obj: Option<ScalarFunctionType>,
     vars: Vec<VarInfo>,
     constrs: HashMap<ConstrId, ConstrInfo>, // 使用 Gurobi 行索引作为键
@@ -74,8 +75,14 @@ impl GurobiOptimizer {
                 vars: Vec::new(),
                 constrs: HashMap::new(),
                 obj: None,
+                sense: None,
             })
         }
+    }
+    pub fn set_objective(&mut self, f: ScalarFunctionType, sense: i32) {
+        self.obj = Some(f);
+        self.sense = Some(sense);
+        self.needs_update = true;
     }
     pub fn update(&mut self) -> Result<(), String> {
         let mut ret = 0;
@@ -92,6 +99,15 @@ impl GurobiOptimizer {
             .map(|v| v.vtype as c_char)
             .collect::<Vec<c_char>>();
         // TODO:add obj coefficients logic
+        let (varid, coeff, _) = match &self.obj {
+            Some(f) => scalar_function_to_grb(f)?,
+            None => (Vec::new(), Vec::new(), 0.0),
+        };
+        // 这里需要注意，如果变量在目标函数中没有出现，需要补0
+        let mut obj = vec![0.0; numvars as usize];
+        for (v, c) in varid.iter().zip(coeff.iter()) {
+            obj[v.0] = *c;
+        }
         unsafe {
             ret = (self.api.GRBaddvars)(
                 self.model as *mut c_void,
@@ -100,7 +116,7 @@ impl GurobiOptimizer {
                 std::ptr::null(),
                 std::ptr::null(),
                 std::ptr::null(),
-                std::ptr::null(),
+                obj.as_ptr() as *const c_double,
                 lb.as_ptr(),
                 ub.as_ptr(),
                 vtype.as_ptr(),
@@ -108,6 +124,17 @@ impl GurobiOptimizer {
             );
             if ret != 0 {
                 return Err(format!("Failed to add variables: error code {}", ret));
+            }
+        }
+        // 目标函数方向
+        unsafe {
+            ret = (self.api.GRBsetintattr)(
+                self.model,
+                GRB_INT_ATTR_MODELSENSE.as_ptr() as *const c_char,
+                self.sense.unwrap(),
+            );
+            if ret != 0 {
+                return Err(format!("Failed to set objective sense: error code {}", ret));
             }
         }
         // 更新约束
@@ -254,27 +281,36 @@ mod tests {
             GurobiApi::new(find_library_from("/usr/local/gurobi1203".to_string()).unwrap())
                 .unwrap();
         let mut solver = GurobiOptimizer::new(Arc::new(gurobi_api), None).unwrap();
-        let var_id1 = solver.add_variable(Some("x1"));
-        let var_id2 = solver.add_variable(Some("x2"));
-        let var_id3 = solver.add_variable(Some("x3"));
+        let var_id1 = solver.add_variable(Some("x"));
+        let var_id2 = solver.add_variable(Some("y"));
+        let var_id3 = solver.add_variable(Some("z"));
         let mut f = ScalarFunctionType::Affine(ScalarAffineFn::new());
         if let ScalarFunctionType::Affine(ref mut afn) = f {
             afn.push_term(var_id1, 1.0);
             afn.push_term(var_id2, 2.0);
+            afn.push_term(var_id3, 3.0);
             afn.simplify();
         }
-        let mut s = ScalarSetType::LessThan(10.0);
+        let mut s = ScalarSetType::LessThan(4.0);
         let constr_id = solver.add_constraint(f, s);
         assert_eq!(constr_id.0, 0);
         f = ScalarFunctionType::Affine(ScalarAffineFn::new());
         if let ScalarFunctionType::Affine(ref mut afn) = f {
+            afn.push_term(var_id1, 1.0);
             afn.push_term(var_id2, 1.0);
-            afn.push_term(var_id3, 3.0);
             afn.simplify();
         }
-        s = ScalarSetType::GreaterThan(5.0);
+        s = ScalarSetType::GreaterThan(1.0);
         let constr_id2 = solver.add_constraint(f, s);
         assert_eq!(constr_id2.0, 1);
+        f = ScalarFunctionType::Affine(ScalarAffineFn::new());
+        if let ScalarFunctionType::Affine(ref mut afn) = f {
+            afn.push_term(var_id1, 1.0);
+            afn.push_term(var_id2, 1.0);
+            afn.push_term(var_id3, 2.0);
+            afn.simplify();
+        }
+        solver.set_objective(f, GRB_MAXIMIZE);
         solver.update().unwrap();
         let status = solver.optimize().unwrap();
         assert_eq!(status, SolveStatus::Optimal);

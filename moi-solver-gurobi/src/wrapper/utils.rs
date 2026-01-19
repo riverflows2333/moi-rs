@@ -46,3 +46,25 @@ pub fn scalar_constraint_to_grb(
     }
     Ok((var, coeff, sense, rhs))
 }
+
+// 将函数提取VarID与系数
+pub fn scalar_function_to_grb(
+    function: &ScalarFunctionType,
+) -> Result<(Vec<VarId>, Vec<f64>, f64), String> {
+    let mut var = Vec::new();
+    let mut coeff = Vec::new();
+    let mut constant = 0.0;
+    match function {
+        ScalarFunctionType::Affine(afn) => {
+            for term in &afn.terms {
+                var.push(term.var);
+                coeff.push(term.coeff);
+            }
+            constant = afn.constant;
+        }
+        _ => {
+            return Err("Unsupported function type".to_string());
+        }
+    }
+    Ok((var, coeff, constant))
+}

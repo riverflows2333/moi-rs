@@ -29,7 +29,7 @@ fn test_api_mip() {
         assert_eq!(ret, 0);
         let obj = [1., 1., 2.];
         // 添加变量
-        let vtype = [GRB_BINARY, GRB_BINARY, GRB_BINARY];
+        let vtype = [GRB_CONTINUOUS, GRB_CONTINUOUS, GRB_CONTINUOUS];
         ret = (api.GRBaddvars)(
             model,
             3,
@@ -109,7 +109,7 @@ fn test_api_mip() {
         } else {
             panic!("No optimal solution found");
         }
-    (api.GRBfreemodel)(model);
-    (api.GRBfreeenv)(env);
+        (api.GRBfreemodel)(model);
+        (api.GRBfreeenv)(env);
     }
 }
