@@ -1,5 +1,5 @@
-use moi_core::attributes::{AttrValue, ConstraintAttr, ModelAttr, OptimizerAttr, VariableAttr};
-
+use moi_core::attributes::*;
+use crate::status::*;
 use moi_core::errors::MoiError;
 use moi_core::functions::ScalarFunctionType;
 use moi_core::indices::{ConstrId, VarId};
@@ -51,6 +51,6 @@ pub trait ModelLike {
 }
 
 pub trait Optimizer: ModelLike {
-    fn optimize(&mut self) -> Result<crate::status::SolveStatus, MoiError>;
+    fn optimize(&mut self) -> Result<SolveStatus, MoiError>;
     fn compute_conflict(&mut self) -> Result<(), MoiError>;
 }

@@ -1,11 +1,11 @@
 use crate::bindings::*;
 use crate::dynamic::api::GurobiApi;
+use crate::wrapper::utils::*;
 use moi_core::*;
-use moi_solver_api::{ModelLike, Optimizer};
+use moi_solver_api::{ModelLike, Optimizer, SolveStatus};
 use std::collections::HashMap;
 use std::ffi::{CString, c_char, c_double, c_int, c_void};
 use std::sync::Arc;
-use crate::wrapper::utils::*;
 pub struct GurobiOptimizer {
     api: Arc<GurobiApi>,
     env: *mut c_void,
@@ -193,6 +193,23 @@ impl ModelLike for GurobiOptimizer {
     }
 }
 
+impl Optimizer for GurobiOptimizer {
+    fn optimize(&mut self) -> Result<SolveStatus, MoiError> {
+        unsafe {
+            let ret = (self.api.GRBoptimize)(self.model);
+            if ret != 0 {
+                return Err(MoiError::Msg(format!(
+                    "Failed to optimize Gurobi model: error code {}",
+                    ret
+                )));
+            }
+        }
+        Ok(SolveStatus::Optimal)
+    }
+    fn compute_conflict(&mut self) -> Result<(), MoiError> {
+        unimplemented!()
+    }
+}
 
 impl Drop for GurobiOptimizer {
     fn drop(&mut self) {
@@ -230,5 +247,36 @@ mod tests {
         let var_id2 = solver.add_variable(Some("x2"));
         assert_eq!(var_id2.0, 1);
         solver.update().unwrap();
+    }
+    #[test]
+    fn test_gurobi_solver_solve() {
+        let gurobi_api =
+            GurobiApi::new(find_library_from("/usr/local/gurobi1203".to_string()).unwrap())
+                .unwrap();
+        let mut solver = GurobiOptimizer::new(Arc::new(gurobi_api), None).unwrap();
+        let var_id1 = solver.add_variable(Some("x1"));
+        let var_id2 = solver.add_variable(Some("x2"));
+        let var_id3 = solver.add_variable(Some("x3"));
+        let mut f = ScalarFunctionType::Affine(ScalarAffineFn::new());
+        if let ScalarFunctionType::Affine(ref mut afn) = f {
+            afn.push_term(var_id1, 1.0);
+            afn.push_term(var_id2, 2.0);
+            afn.simplify();
+        }
+        let mut s = ScalarSetType::LessThan(10.0);
+        let constr_id = solver.add_constraint(f, s);
+        assert_eq!(constr_id.0, 0);
+        f = ScalarFunctionType::Affine(ScalarAffineFn::new());
+        if let ScalarFunctionType::Affine(ref mut afn) = f {
+            afn.push_term(var_id2, 1.0);
+            afn.push_term(var_id3, 3.0);
+            afn.simplify();
+        }
+        s = ScalarSetType::GreaterThan(5.0);
+        let constr_id2 = solver.add_constraint(f, s);
+        assert_eq!(constr_id2.0, 1);
+        solver.update().unwrap();
+        let status = solver.optimize().unwrap();
+        assert_eq!(status, SolveStatus::Optimal);
     }
 }
