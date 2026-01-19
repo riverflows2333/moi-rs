@@ -68,112 +68,122 @@ impl ModelLike for DummyModel {
         self.constraints.push(c);
         ConstrId::new(id)
     }
-    fn supports_constraint(&self, f: &ScalarFunctionType, s: &ScalarSetType) -> bool {
-        matches!(f, ScalarFunctionType::Affine(_))
-            && matches!(
-                s,
-                ScalarSetType::GreaterThan(_)
-                    | ScalarSetType::LessThan(_)
-                    | ScalarSetType::EqualTo(_)
-                    | ScalarSetType::Interval(..)
-            )
-    }
-
-    // unified attribute APIs
-    fn get_model_attr(&self, attr: ModelAttr) -> Option<AttrValue> {
-        match attr {
-            ModelAttr::NumberOfVariables => Some(AttrValue::Usize(self.variables.len())),
-            ModelAttr::NumberOfConstraints => Some(AttrValue::Usize(self.constraints.len())),
-            ModelAttr::ListOfVariableIndices => {
-                let list: Vec<usize> = (0..self.variables.len()).collect();
-                Some(AttrValue::VecUsize(list))
-            }
-            ModelAttr::ObjectiveFunction => self.obj.clone().map(AttrValue::ScalarAffineFn),
-            ModelAttr::ModelName => Some(AttrValue::String(self.name.clone())),
-            _ => self.model_attrs.get(&attr).cloned(),
-        }
-    }
-
-    fn set_model_attr(&mut self, attr: ModelAttr, mut value: AttrValue) -> Result<(), MoiError> {
-        // derived read-only check
-        match attr {
-            ModelAttr::NumberOfVariables
-            | ModelAttr::NumberOfConstraints
-            | ModelAttr::ListOfVariableIndices => {
-                return Err(MoiError::SetAttributeNotAllowed);
-            }
-            ModelAttr::ObjectiveFunction => {
-                if let AttrValue::ScalarAffineFn(ref mut f) = value {
-                    f.simplify();
-                    self.obj = Some(f.clone());
-                }
-                // We update the specific field but also allow storing it if useful,
-                // though derived get logic prefers the field.
-            }
-            ModelAttr::ModelName => {
-                if let AttrValue::String(ref name) = value {
-                    self.name = name.clone();
-                }
-            }
-            _ => {}
-        }
-        self.model_attrs.insert(attr, value);
-        Ok(())
-    }
-
-    fn get_optimizer_attr(&self, attr: OptimizerAttr) -> Option<AttrValue> {
-        self.optimizer_attrs.get(&attr).cloned()
-    }
-
-    fn set_optimizer_attr(
+    fn add_constraints(
         &mut self,
-        attr: OptimizerAttr,
-        value: AttrValue,
-    ) -> Result<(), MoiError> {
-        self.optimizer_attrs.insert(attr, value);
-        Ok(())
+        fs: Vec<ScalarFunctionType>,
+        ss: Vec<ScalarSetType>,
+    ) -> Vec<ConstrId> {
+        fs.into_iter()
+            .zip(ss.into_iter())
+            .map(|(f, s)| self.add_constraint(f, s))
+            .collect()
     }
+    // fn supports_constraint(&self, f: &ScalarFunctionType, s: &ScalarSetType) -> bool {
+    //     matches!(f, ScalarFunctionType::Affine(_))
+    //         && matches!(
+    //             s,
+    //             ScalarSetType::GreaterThan(_)
+    //                 | ScalarSetType::LessThan(_)
+    //                 | ScalarSetType::EqualTo(_)
+    //                 | ScalarSetType::Interval(..)
+    //         )
+    // }
 
-    fn get_variable_attr(&self, _attr: VariableAttr, _v: VarId) -> Option<AttrValue> {
-        None
-    }
+    // // unified attribute APIs
+    // fn get_model_attr(&self, attr: ModelAttr) -> Option<AttrValue> {
+    //     match attr {
+    //         ModelAttr::NumberOfVariables => Some(AttrValue::Usize(self.variables.len())),
+    //         ModelAttr::NumberOfConstraints => Some(AttrValue::Usize(self.constraints.len())),
+    //         ModelAttr::ListOfVariableIndices => {
+    //             let list: Vec<usize> = (0..self.variables.len()).collect();
+    //             Some(AttrValue::VecUsize(list))
+    //         }
+    //         ModelAttr::ObjectiveFunction => self.obj.clone().map(AttrValue::ScalarAffineFn),
+    //         ModelAttr::ModelName => Some(AttrValue::String(self.name.clone())),
+    //         _ => self.model_attrs.get(&attr).cloned(),
+    //     }
+    // }
 
-    fn set_variable_attr(
-        &mut self,
-        _attr: VariableAttr,
-        _v: VarId,
-        _value: AttrValue,
-    ) -> Result<(), MoiError> {
-        Err(MoiError::UnsupportedAttribute)
-    }
+    // fn set_model_attr(&mut self, attr: ModelAttr, mut value: AttrValue) -> Result<(), MoiError> {
+    //     // derived read-only check
+    //     match attr {
+    //         ModelAttr::NumberOfVariables
+    //         | ModelAttr::NumberOfConstraints
+    //         | ModelAttr::ListOfVariableIndices => {
+    //             return Err(MoiError::SetAttributeNotAllowed);
+    //         }
+    //         ModelAttr::ObjectiveFunction => {
+    //             if let AttrValue::ScalarAffineFn(ref mut f) = value {
+    //                 f.simplify();
+    //                 self.obj = Some(f.clone());
+    //             }
+    //             // We update the specific field but also allow storing it if useful,
+    //             // though derived get logic prefers the field.
+    //         }
+    //         ModelAttr::ModelName => {
+    //             if let AttrValue::String(ref name) = value {
+    //                 self.name = name.clone();
+    //             }
+    //         }
+    //         _ => {}
+    //     }
+    //     self.model_attrs.insert(attr, value);
+    //     Ok(())
+    // }
 
-    fn get_constraint_attr(&self, _attr: ConstraintAttr, _c: ConstrId) -> Option<AttrValue> {
-        None
-    }
+    // fn get_optimizer_attr(&self, attr: OptimizerAttr) -> Option<AttrValue> {
+    //     self.optimizer_attrs.get(&attr).cloned()
+    // }
 
-    fn set_constraint_attr(
-        &mut self,
-        _attr: ConstraintAttr,
-        _c: ConstrId,
-        _value: AttrValue,
-    ) -> Result<(), MoiError> {
-        Err(MoiError::UnsupportedAttribute)
-    }
+    // fn set_optimizer_attr(
+    //     &mut self,
+    //     attr: OptimizerAttr,
+    //     value: AttrValue,
+    // ) -> Result<(), MoiError> {
+    //     self.optimizer_attrs.insert(attr, value);
+    //     Ok(())
+    // }
 
-    // objective & housekeeping
-    fn is_empty(&self) -> bool {
-        self.variables.is_empty() && self.constraints.is_empty()
-    }
-    fn empty(&mut self) {
-        self.variables.clear();
-        self.var_to_name.clear();
-        self.name_to_var.clear();
-        self.con_to_name.clear();
-        self.name_to_con.clear();
-        self.constraints.clear();
-        self.model_attrs.clear();
-        self.optimizer_attrs.clear();
-    }
+    // fn get_variable_attr(&self, _attr: VariableAttr, _v: VarId) -> Option<AttrValue> {
+    //     None
+    // }
+
+    // fn set_variable_attr(
+    //     &mut self,
+    //     _attr: VariableAttr,
+    //     _v: VarId,
+    //     _value: AttrValue,
+    // ) -> Result<(), MoiError> {
+    //     Err(MoiError::UnsupportedAttribute)
+    // }
+
+    // fn get_constraint_attr(&self, _attr: ConstraintAttr, _c: ConstrId) -> Option<AttrValue> {
+    //     None
+    // }
+
+    // fn set_constraint_attr(
+    //     &mut self,
+    //     _attr: ConstraintAttr,
+    //     _c: ConstrId,
+    //     _value: AttrValue,
+    // ) -> Result<(), MoiError> {
+    //     Err(MoiError::UnsupportedAttribute)
+    // }
+
+    // // objective & housekeeping
+    // fn is_empty(&self) -> bool {
+    //     self.variables.is_empty() && self.constraints.is_empty()
+    // }
+    // fn empty(&mut self) {
+    //     self.variables.clear();
+    //     self.var_to_name.clear();
+    //     self.name_to_var.clear();
+    //     self.con_to_name.clear();
+    //     self.name_to_con.clear();
+    //     self.constraints.clear();
+    //     self.model_attrs.clear();
+    //     self.optimizer_attrs.clear();
+    // }
 
     // 支持查询：统一版本已在 supports 泛型中实现
 }
