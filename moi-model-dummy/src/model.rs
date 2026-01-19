@@ -54,13 +54,13 @@ impl DummyModel {
 // Implement new attribute methods from ModelLike trait
 impl ModelLike for DummyModel {
     // core build operations
-    fn add_variable(&mut self) -> VarId {
+    fn add_variable(&mut self, name: Option<&str>) -> VarId {
         let id = VarId(self.variables.len());
         self.variables.push(Variable { id, name: None });
         id
     }
-    fn add_variables(&mut self, n: usize) -> Vec<VarId> {
-        (0..n).map(|_| self.add_variable()).collect()
+    fn add_variables(&mut self, n: usize, name: Option<&str>) -> Vec<VarId> {
+        (0..n).map(|_| self.add_variable(name)).collect()
     }
     fn add_constraint(&mut self, f: ScalarFunctionType, s: ScalarSetType) -> ConstrId {
         let id = self.constraints.len();

@@ -6,7 +6,7 @@ use moi_solver_api::{ModelLike, Optimizer};
 #[test]
 fn set_and_get_objective_via_attr() {
     let mut m = DummyModel::default();
-    let v = m.add_variable();
+    let v = m.add_variable(None);
     let mut obj = ScalarAffineFn::default();
     obj.push_term(v, 3.0);
     obj.push_term(v, 2.0); // will simplify to 5.0

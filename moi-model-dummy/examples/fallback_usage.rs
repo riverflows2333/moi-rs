@@ -13,8 +13,8 @@ fn main() {
         .unwrap();
 
     // 添加变量
-    let v = uf.add_variable();
-    let w = uf.add_variable();
+    let v = uf.add_variable(None);
+    let w = uf.add_variable(None);
     // 变量数量与索引列表为派生只读属性，使用 get 读取
     if let Some(AttrValue::Int(nv)) = uf.get_model_attr(ModelAttr::NumberOfVariables) {
         println!("num vars: {:?}", nv);

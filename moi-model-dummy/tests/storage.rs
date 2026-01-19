@@ -6,8 +6,8 @@ use moi_solver_api::ModelLike;
 #[test]
 fn variables_and_names_are_stored() {
     let mut m = DummyModel::default();
-    let v0 = m.add_variable();
-    let v1 = m.add_variable();
+    let v0 = m.add_variable(None);
+    let v1 = m.add_variable(None);
     m.set_var_name(v0, "x").unwrap();
     m.set_var_name(v1, "y").unwrap();
     assert_eq!(m.get_var_name(v0), Some("x"));
@@ -17,7 +17,7 @@ fn variables_and_names_are_stored() {
 #[test]
 fn add_constraint_returns_increasing_ids() {
     let mut m = DummyModel::default();
-    let v = m.add_variable();
+    let v = m.add_variable(None);
     let mut f = ScalarAffineFn::default();
     f.push_term(v, 2.0);
     let c1 = m.add_constraint(

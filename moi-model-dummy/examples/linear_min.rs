@@ -3,7 +3,7 @@ use moi_core::attributes::ModelAttr;
 
 fn main() {
     let mut model = moi_model_dummy::DummyModel::default();
-    let vars = model.add_variables(2);
+    let vars = model.add_variables(2,None);
 
     let mut f = moi_core::functions::ScalarAffineFn::default();
     f.push_term(vars[0], 1.0);
