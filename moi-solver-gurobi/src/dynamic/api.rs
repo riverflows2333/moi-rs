@@ -6,6 +6,8 @@ use std::{
 
 pub struct GurobiApi {
     _lib: Library,
+    // version functions
+    pub GRBversion: unsafe extern "C" fn(majorP: *mut c_int, minorP: *mut c_int, techP: *mut c_int),
     // environment functions
     pub GRBloadenv:
         unsafe extern "C" fn(env: *mut *mut c_void, logfilename: *const c_char) -> c_int,
@@ -124,6 +126,7 @@ impl GurobiApi {
         unsafe {
             let lib = Library::new(lib_path)?;
             Ok(Self {
+                GRBversion: *lib.get(b"GRBversion")?,
                 GRBstartenv: *lib.get(b"GRBstartenv")?,
                 GRBloadenv: *lib.get(b"GRBloadenv")?,
                 GRBfreeenv: *lib.get(b"GRBfreeenv")?,
@@ -156,5 +159,18 @@ mod tests {
         let gurobi_api =
             GurobiApi::new(find_library_from("/usr/local/gurobi1203".to_string()).unwrap());
         assert!(gurobi_api.is_ok());
+    }
+    #[test]
+    fn test_version_function() {
+        let gurobi_api =
+            GurobiApi::new(find_library_from("/usr/local/gurobi1203".to_string()).unwrap())
+                .unwrap();
+        unsafe {
+            let mut major = 0;
+            let mut minor = 0;
+            let mut tech = 0;
+            (gurobi_api.GRBversion)(&mut major, &mut minor, &mut tech);
+            println!("Gurobi version: {}.{}.{}", major, minor, tech);
+        }
     }
 }
