@@ -153,12 +153,6 @@ impl GurobiOptimizer {
         )?;
         let numconstrs = self.constrs.len() as c_int;
         let numnz = cind.len() as c_int;
-        println!("Adding {} constraints with {} non-zeros", numconstrs, numnz);
-        println!("{:?}",cbeg);
-        println!("{:?}",cind);
-        println!("{:?}",cval);
-        println!("{:?}",sense);
-        println!("{:?}",rhs);
         unsafe {
             ret = (self.api.GRBaddconstrs)(
                 self.model,
