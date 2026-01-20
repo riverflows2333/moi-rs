@@ -5,6 +5,7 @@ use moi_core::*;
 use moi_solver_api::*;
 use std::collections::HashMap;
 use std::ffi::{CString, c_char, c_double, c_int, c_void};
+use std::fmt::format;
 use std::sync::Arc;
 pub struct GurobiOptimizer {
     api: Arc<GurobiApi>,
@@ -53,13 +54,13 @@ impl GurobiOptimizer {
             }
             let mut model: *mut c_void = std::ptr::null_mut();
             let cname = match name {
-                Some(n) => CString::new(n).unwrap().as_ptr(),
-                None => std::ptr::null(),
+                Some(n) => CString::new(n).unwrap(),
+                None => CString::new("model").unwrap(),
             };
             let ret = (api.GRBnewmodel)(
                 env,
                 &mut model as *mut *mut c_void,
-                cname,
+                cname.as_ptr(),
                 0,
                 std::ptr::null(),
                 std::ptr::null(),
@@ -127,16 +128,19 @@ impl GurobiOptimizer {
             }
         }
         // 目标函数方向
-        unsafe {
-            ret = (self.api.GRBsetintattr)(
-                self.model,
-                GRB_INT_ATTR_MODELSENSE.as_ptr() as *const c_char,
-                self.sense.unwrap(),
-            );
-            if ret != 0 {
-                return Err(format!("Failed to set objective sense: error code {}", ret));
+        if let Some(s) = self.sense {
+            unsafe {
+                ret = (self.api.GRBsetintattr)(
+                    self.model,
+                    GRB_INT_ATTR_MODELSENSE.as_ptr() as *const c_char,
+                    s,
+                );
+                if ret != 0 {
+                    return Err(format!("Failed to set objective sense: error code {}", ret));
+                }
             }
         }
+
         // 更新约束
         for (_cid, constr) in &self.constrs {
             let (var_ids, coeffs, senses, rhss) = scalar_constraint_to_grb(constr)?;
@@ -185,20 +189,22 @@ impl ModelLike for GurobiOptimizer {
     fn add_variables(
         &mut self,
         n: usize,
-        name: Option<&str>,
-        vtype: Option<char>,
-        lb: BoundType,
-        ub: BoundType,
+        name: Option<NameType>,
+        vtype: Option<Vec<char>>,
+        lb: Option<BoundType>,
+        ub: Option<BoundType>,
     ) -> Vec<VarId> {
         // Implementation of adding multiple variables
         let start_id = self.vars.len();
         let lb = match lb {
-            BoundType::Single(val) => vec![val; n],
-            BoundType::Vector(vec) => vec,
+            Some(BoundType::Single(val)) => vec![val; n],
+            Some(BoundType::Vector(vec)) => vec,
+            None => vec![0.0; n],
         };
         let ub = match ub {
-            BoundType::Single(val) => vec![val; n],
-            BoundType::Vector(vec) => vec,
+            Some(BoundType::Single(val)) => vec![val; n],
+            Some(BoundType::Vector(vec)) => vec,
+            None => vec![f64::INFINITY; n],
         };
         for i in 0..n {
             let var_id = start_id + i;
@@ -206,8 +212,12 @@ impl ModelLike for GurobiOptimizer {
                 col_index: var_id,
                 lb: lb[i],
                 ub: ub[i],
-                vtype: vtype.unwrap_or('C'),
-                name: format!("{}{}", name.unwrap_or(""), var_id),
+                vtype: vtype.as_ref().map_or('C', |v| v[i]),
+                name: match &name {
+                    Some(NameType::Single(s)) => format!("{}_{}", s.clone(), i),
+                    Some(NameType::Vector(vec)) => vec[i].clone(),
+                    None => "".to_string(),
+                },
             });
         }
         self.needs_update = true;
@@ -344,10 +354,10 @@ mod tests {
         let mut solver = GurobiOptimizer::new(Arc::new(gurobi_api), None).unwrap();
         let var_ids = solver.add_variables(
             3,
-            Some("x"),
-            Some('C'),
-            BoundType::Single(0.0),
-            BoundType::Vector(vec![10.0, 20.0, 30.0]),
+            Some(NameType::Single("x".to_string())),
+            Some(vec!['C', 'I', 'B']),
+            None,
+            Some(BoundType::Vector(vec![10.0, 20.0, 30.0])),
         );
         assert_eq!(var_ids.len(), 3);
         assert_eq!(var_ids[0].0, 0);

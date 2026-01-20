@@ -1,6 +1,6 @@
-use moi_core::attributes::*;
 use crate::status::*;
 use crate::utils::*;
+use moi_core::attributes::*;
 use moi_core::errors::MoiError;
 use moi_core::functions::ScalarFunctionType;
 use moi_core::indices::{ConstrId, VarId};
@@ -8,8 +8,21 @@ use moi_core::sets::ScalarSetType;
 // generic attribute trait usage; TypeId utilized in concrete model implementations
 
 pub trait ModelLike {
-    fn add_variable(&mut self, name: Option<&str>, vtype: Option<char>,lb: Option<f64>, ub: Option<f64>) -> VarId;
-    fn add_variables(&mut self, n: usize, name: Option<&str>, vtype: Option<char>, lb: BoundType, ub: BoundType) -> Vec<VarId>;
+    fn add_variable(
+        &mut self,
+        name: Option<&str>,
+        vtype: Option<char>,
+        lb: Option<f64>,
+        ub: Option<f64>,
+    ) -> VarId;
+    fn add_variables(
+        &mut self,
+        n: usize,
+        name: Option<NameType>,
+        vtype: Option<Vec<char>>,
+        lb: Option<BoundType>,
+        ub: Option<BoundType>,
+    ) -> Vec<VarId>;
     fn add_constraint(&mut self, f: ScalarFunctionType, s: ScalarSetType) -> ConstrId;
     fn add_constraints(
         &mut self,
