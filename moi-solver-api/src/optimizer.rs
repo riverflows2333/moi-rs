@@ -7,8 +7,8 @@ use moi_core::sets::ScalarSetType;
 // generic attribute trait usage; TypeId utilized in concrete model implementations
 
 pub trait ModelLike {
-    fn add_variable(&mut self, name: Option<&str>) -> VarId;
-    fn add_variables(&mut self, n: usize, name: Option<&str>) -> Vec<VarId>;
+    fn add_variable(&mut self, name: Option<&str>, vtype: Option<char>) -> VarId;
+    fn add_variables(&mut self, n: usize, name: Option<&str>, vtype: Option<char>) -> Vec<VarId>;
     fn add_constraint(&mut self, f: ScalarFunctionType, s: ScalarSetType) -> ConstrId;
     fn add_constraints(
         &mut self,

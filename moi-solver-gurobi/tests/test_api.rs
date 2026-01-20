@@ -29,7 +29,7 @@ fn test_api_mip() {
         assert_eq!(ret, 0);
         let obj = [1., 1., 2.];
         // 添加变量
-        let vtype = [GRB_CONTINUOUS, GRB_CONTINUOUS, GRB_CONTINUOUS];
+        let vtype = [GRB_BINARY,GRB_BINARY,GRB_BINARY];
         ret = (api.GRBaddvars)(
             model,
             3,

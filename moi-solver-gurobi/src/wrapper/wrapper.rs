@@ -162,7 +162,7 @@ impl GurobiOptimizer {
 }
 
 impl ModelLike for GurobiOptimizer {
-    fn add_variable(&mut self, name: Option<&str>) -> VarId {
+    fn add_variable(&mut self, name: Option<&str>, vtype: Option<char>) -> VarId {
         // Implementation of adding a single variable
         let var_id = self.vars.len();
         // Add variable to Gurobi model here
@@ -170,13 +170,13 @@ impl ModelLike for GurobiOptimizer {
             col_index: var_id,
             lb: 0.0,
             ub: f64::INFINITY,
-            vtype: 'C',
+            vtype: vtype.unwrap_or('C'),
             name: name.unwrap_or("").to_string(),
         });
         self.needs_update = true;
         VarId(var_id)
     }
-    fn add_variables(&mut self, n: usize, name: Option<&str>) -> Vec<VarId> {
+    fn add_variables(&mut self, n: usize, name: Option<&str>, vtype: Option<char>) -> Vec<VarId> {
         // Implementation of adding multiple variables
         let start_id = self.vars.len();
         for i in 0..n {
@@ -185,7 +185,7 @@ impl ModelLike for GurobiOptimizer {
                 col_index: var_id,
                 lb: 0.0,
                 ub: f64::INFINITY,
-                vtype: 'C',
+                vtype: vtype.unwrap_or('C'),
                 name: format!("{}{}", name.unwrap_or(""), var_id),
             });
         }
@@ -269,9 +269,9 @@ mod tests {
             GurobiApi::new(find_library_from("/usr/local/gurobi1203".to_string()).unwrap())
                 .unwrap();
         let mut solver = GurobiOptimizer::new(Arc::new(gurobi_api), None).unwrap();
-        let var_id = solver.add_variable(Some("x1"));
+        let var_id = solver.add_variable(Some("x1"),Some('C'));
         assert_eq!(var_id.0, 0);
-        let var_id2 = solver.add_variable(Some("x2"));
+        let var_id2 = solver.add_variable(Some("x2"), None);
         assert_eq!(var_id2.0, 1);
         solver.update().unwrap();
     }
@@ -281,9 +281,9 @@ mod tests {
             GurobiApi::new(find_library_from("/usr/local/gurobi1203".to_string()).unwrap())
                 .unwrap();
         let mut solver = GurobiOptimizer::new(Arc::new(gurobi_api), None).unwrap();
-        let var_id1 = solver.add_variable(Some("x"));
-        let var_id2 = solver.add_variable(Some("y"));
-        let var_id3 = solver.add_variable(Some("z"));
+        let var_id1 = solver.add_variable(Some("x"), Some('B'));
+        let var_id2 = solver.add_variable(Some("y"), Some('B'));
+        let var_id3 = solver.add_variable(Some("z"), Some('B'));
         let mut f = ScalarFunctionType::Affine(ScalarAffineFn::new());
         if let ScalarFunctionType::Affine(ref mut afn) = f {
             afn.push_term(var_id1, 1.0);
