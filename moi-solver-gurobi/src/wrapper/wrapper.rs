@@ -2,7 +2,7 @@ use crate::bindings::*;
 use crate::dynamic::api::GurobiApi;
 use crate::wrapper::utils::*;
 use moi_core::*;
-use moi_solver_api::{ModelLike, Optimizer, SolveStatus};
+use moi_solver_api::*;
 use std::collections::HashMap;
 use std::ffi::{CString, c_char, c_double, c_int, c_void};
 use std::sync::Arc;
@@ -162,29 +162,50 @@ impl GurobiOptimizer {
 }
 
 impl ModelLike for GurobiOptimizer {
-    fn add_variable(&mut self, name: Option<&str>, vtype: Option<char>) -> VarId {
+    fn add_variable(
+        &mut self,
+        name: Option<&str>,
+        vtype: Option<char>,
+        lb: Option<f64>,
+        ub: Option<f64>,
+    ) -> VarId {
         // Implementation of adding a single variable
         let var_id = self.vars.len();
         // Add variable to Gurobi model here
         self.vars.push(VarInfo {
             col_index: var_id,
-            lb: 0.0,
-            ub: f64::INFINITY,
+            lb: lb.unwrap_or(0.0),
+            ub: ub.unwrap_or(f64::INFINITY),
             vtype: vtype.unwrap_or('C'),
             name: name.unwrap_or("").to_string(),
         });
         self.needs_update = true;
         VarId(var_id)
     }
-    fn add_variables(&mut self, n: usize, name: Option<&str>, vtype: Option<char>) -> Vec<VarId> {
+    fn add_variables(
+        &mut self,
+        n: usize,
+        name: Option<&str>,
+        vtype: Option<char>,
+        lb: BoundType,
+        ub: BoundType,
+    ) -> Vec<VarId> {
         // Implementation of adding multiple variables
         let start_id = self.vars.len();
+        let lb = match lb {
+            BoundType::Single(val) => vec![val; n],
+            BoundType::Vector(vec) => vec,
+        };
+        let ub = match ub {
+            BoundType::Single(val) => vec![val; n],
+            BoundType::Vector(vec) => vec,
+        };
         for i in 0..n {
             let var_id = start_id + i;
             self.vars.push(VarInfo {
                 col_index: var_id,
-                lb: 0.0,
-                ub: f64::INFINITY,
+                lb: lb[i],
+                ub: ub[i],
                 vtype: vtype.unwrap_or('C'),
                 name: format!("{}{}", name.unwrap_or(""), var_id),
             });
@@ -269,9 +290,9 @@ mod tests {
             GurobiApi::new(find_library_from("/usr/local/gurobi1203".to_string()).unwrap())
                 .unwrap();
         let mut solver = GurobiOptimizer::new(Arc::new(gurobi_api), None).unwrap();
-        let var_id = solver.add_variable(Some("x1"),Some('C'));
+        let var_id = solver.add_variable(Some("x1"), Some('C'), None, None);
         assert_eq!(var_id.0, 0);
-        let var_id2 = solver.add_variable(Some("x2"), None);
+        let var_id2 = solver.add_variable(Some("x2"), None, None, None);
         assert_eq!(var_id2.0, 1);
         solver.update().unwrap();
     }
@@ -281,9 +302,9 @@ mod tests {
             GurobiApi::new(find_library_from("/usr/local/gurobi1203".to_string()).unwrap())
                 .unwrap();
         let mut solver = GurobiOptimizer::new(Arc::new(gurobi_api), None).unwrap();
-        let var_id1 = solver.add_variable(Some("x"), Some('B'));
-        let var_id2 = solver.add_variable(Some("y"), Some('B'));
-        let var_id3 = solver.add_variable(Some("z"), Some('B'));
+        let var_id1 = solver.add_variable(Some("x"), Some('B'), None, None);
+        let var_id2 = solver.add_variable(Some("y"), Some('B'), None, None);
+        let var_id3 = solver.add_variable(Some("z"), Some('B'), None, None);
         let mut f = ScalarFunctionType::Affine(ScalarAffineFn::new());
         if let ScalarFunctionType::Affine(ref mut afn) = f {
             afn.push_term(var_id1, 1.0);
@@ -314,5 +335,24 @@ mod tests {
         solver.update().unwrap();
         let status = solver.optimize().unwrap();
         assert_eq!(status, SolveStatus::Optimal);
+    }
+    #[test]
+    fn test_gurobi_solver_add_variables() {
+        let gurobi_api =
+            GurobiApi::new(find_library_from("/usr/local/gurobi1203".to_string()).unwrap())
+                .unwrap();
+        let mut solver = GurobiOptimizer::new(Arc::new(gurobi_api), None).unwrap();
+        let var_ids = solver.add_variables(
+            3,
+            Some("x"),
+            Some('C'),
+            BoundType::Single(0.0),
+            BoundType::Vector(vec![10.0, 20.0, 30.0]),
+        );
+        assert_eq!(var_ids.len(), 3);
+        assert_eq!(var_ids[0].0, 0);
+        assert_eq!(var_ids[1].0, 1);
+        assert_eq!(var_ids[2].0, 2);
+        solver.update().unwrap();
     }
 }
