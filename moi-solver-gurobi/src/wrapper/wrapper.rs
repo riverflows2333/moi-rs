@@ -5,8 +5,8 @@ use moi_core::*;
 use moi_solver_api::*;
 use std::collections::HashMap;
 use std::ffi::{CString, c_char, c_double, c_int, c_void};
-use std::fmt::format;
 use std::sync::Arc;
+#[derive(Clone)]
 pub struct GurobiOptimizer {
     api: Arc<GurobiApi>,
     env: *mut c_void,
@@ -18,6 +18,7 @@ pub struct GurobiOptimizer {
     constrs: HashMap<ConstrId, ConstrInfo>, // 使用 Gurobi 行索引作为键
 }
 
+#[derive(Clone)]
 struct VarInfo {
     col_index: usize, // Gurobi 内部的列索引 (0, 1, 2...)
     // 缓存上下界，避免频繁查询 C API
@@ -26,7 +27,7 @@ struct VarInfo {
     vtype: char, // 'C', 'B', 'I'
     name: String,
 }
-
+#[derive(Clone)]
 pub struct ConstrInfo {
     pub row_index: usize, // Gurobi 内部的行索引
     pub name: String,     // 可以在这里存约束类型，方便后续查询
@@ -36,8 +37,9 @@ pub struct ConstrInfo {
 
 impl GurobiOptimizer {
     pub fn new(api: Arc<GurobiApi>, name: Option<&str>) -> Result<Self, String> {
+        let mut env: *mut c_void = std::ptr::null_mut();
+        let mut model: *mut c_void = std::ptr::null_mut();
         unsafe {
-            let mut env: *mut c_void = std::ptr::null_mut();
             let ret = (api.GRBloadenv)(&mut env as *mut *mut c_void, std::ptr::null());
             if ret != 0 {
                 return Err(format!(
@@ -52,7 +54,6 @@ impl GurobiOptimizer {
                     ret
                 ));
             }
-            let mut model: *mut c_void = std::ptr::null_mut();
             let cname = match name {
                 Some(n) => CString::new(n).unwrap(),
                 None => CString::new("model").unwrap(),
@@ -68,17 +69,17 @@ impl GurobiOptimizer {
                 std::ptr::null(),
                 std::ptr::null(),
             );
-            Ok(Self {
-                api,
-                env,
-                model,
-                needs_update: false,
-                vars: Vec::new(),
-                constrs: HashMap::new(),
-                obj: None,
-                sense: None,
-            })
         }
+        Ok(Self {
+            api,
+            env,
+            model,
+            needs_update: false,
+            vars: Vec::new(),
+            constrs: HashMap::new(),
+            obj: None,
+            sense: None,
+        })
     }
     pub fn set_objective(&mut self, f: ScalarFunctionType, sense: i32) {
         self.obj = Some(f);
@@ -111,7 +112,7 @@ impl GurobiOptimizer {
         }
         unsafe {
             ret = (self.api.GRBaddvars)(
-                self.model as *mut c_void,
+                self.model,
                 numvars,
                 0,
                 std::ptr::null(),
@@ -142,25 +143,58 @@ impl GurobiOptimizer {
         }
 
         // 更新约束
-        for (_cid, constr) in &self.constrs {
-            let (var_ids, coeffs, senses, rhss) = scalar_constraint_to_grb(constr)?;
-            let numnz = var_ids.len() as c_int;
-            let vind: Vec<c_int> = var_ids.iter().map(|v| v.0 as c_int).collect();
-            unsafe {
-                ret = (self.api.GRBaddconstr)(
-                    self.model as *mut c_void,
-                    numnz,
-                    vind.as_ptr(),
-                    coeffs.as_ptr(),
-                    senses[0] as c_char,
-                    rhss[0],
-                    std::ptr::null(),
-                );
-                if ret != 0 {
-                    return Err(format!("Failed to add constraint: error code {}", ret));
-                }
+        // TODO:采用GRBaddconstrs批量添加约束
+        let (cbeg, cind, cval, sense, rhs) = build_constr_matrix(
+            &self
+                .constrs.clone()
+                .into_iter()
+                .map(|(_cid, constr)| constr.clone())
+                .collect::<Vec<ConstrInfo>>(),
+        )?;
+        let numconstrs = self.constrs.len() as c_int;
+        let numnz = cind.len() as c_int;
+        println!("Adding {} constraints with {} non-zeros", numconstrs, numnz);
+        println!("{:?}",cbeg);
+        println!("{:?}",cind);
+        println!("{:?}",cval);
+        println!("{:?}",sense);
+        println!("{:?}",rhs);
+        unsafe {
+            ret = (self.api.GRBaddconstrs)(
+                self.model,
+                numconstrs,
+                numnz,
+                cbeg.as_ptr() as *const c_int,
+                cind.as_ptr() as *const c_int,
+                cval.as_ptr() as *const c_double,
+                sense.as_ptr() as *const c_char,
+                rhs.as_ptr() as *const c_double,
+                std::ptr::null(),
+            );
+            if ret != 0 {
+                return Err(format!("Failed to add constraints: error code {}", ret));
             }
         }
+        self.needs_update = false; 
+        // for (_cid, constr) in &self.constrs {
+        //     let (var_ids, coeffs, senses, rhss) = scalar_constraint_to_grb(constr)?;
+        //     let numnz = var_ids.len() as c_int;
+        //     let vind: Vec<c_int> = var_ids.iter().map(|v| v.0 as c_int).collect();
+        //     unsafe {
+        //         ret = (self.api.GRBaddconstr)(
+        //             self.model as *mut c_void,
+        //             numnz,
+        //             vind.as_ptr(),
+        //             coeffs.as_ptr(),
+        //             senses as c_char,
+        //             rhss,
+        //             std::ptr::null(),
+        //         );
+        //         if ret != 0 {
+        //             return Err(format!("Failed to add constraint: error code {}", ret));
+        //         }
+        //     }
+        // }
         Ok(())
     }
 }
