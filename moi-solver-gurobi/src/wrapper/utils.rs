@@ -1,5 +1,4 @@
 use crate::bindings::*;
-use crate::wrapper::wrapper::ConstrInfo;
 use moi_core::*;
 // 提取ScalarConstraint中VarID与系数
 pub fn scalar_constraint_to_grb(

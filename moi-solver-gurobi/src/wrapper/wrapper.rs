@@ -18,23 +18,6 @@ pub struct GurobiOptimizer {
     constrs: HashMap<ConstrId, ConstrInfo>, // 使用 Gurobi 行索引作为键
 }
 
-#[derive(Clone)]
-struct VarInfo {
-    col_index: usize, // Gurobi 内部的列索引 (0, 1, 2...)
-    // 缓存上下界，避免频繁查询 C API
-    lb: f64,
-    ub: f64,
-    vtype: char, // 'C', 'B', 'I'
-    name: String,
-}
-#[derive(Clone)]
-pub struct ConstrInfo {
-    pub row_index: usize, // Gurobi 内部的行索引
-    pub name: String,     // 可以在这里存约束类型，方便后续查询
-    pub f: ScalarFunctionType,
-    pub s: ScalarSetType,
-}
-
 impl GurobiOptimizer {
     pub fn new(api: Arc<GurobiApi>, name: Option<&str>) -> Result<Self, String> {
         let mut env: *mut c_void = std::ptr::null_mut();
