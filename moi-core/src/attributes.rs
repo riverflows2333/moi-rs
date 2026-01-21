@@ -9,6 +9,7 @@ pub enum AttrValue {
     Bool(bool),
     ModelSense(ModelSense),
     ScalarFn(ScalarFunctionType),
+    Status(SolveStatus),
     VecUsize(Vec<usize>),
     Usize(usize),
 }
@@ -96,4 +97,14 @@ pub enum ConstraintAttr {
     ConstraintName,
     ConstraintPrimal,
     ConstraintDual
+}
+
+// 求解状态
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub enum SolveStatus {
+    Unknown,
+    Optimal,
+    Infeasible,
+    Unbounded,
+    Feasible,
 }

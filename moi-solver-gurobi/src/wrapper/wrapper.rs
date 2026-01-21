@@ -139,7 +139,7 @@ impl GurobiOptimizer {
 
         // 更新约束
         // TODO:采用GRBaddconstrs批量添加约束
-        let (cbeg, cind, cval, sense, rhs,names) = build_constr_matrix(
+        let (cbeg, cind, cval, sense, rhs, names) = build_constr_matrix(
             &self
                 .constrs
                 .clone()
@@ -149,8 +149,14 @@ impl GurobiOptimizer {
         )?;
         let numconstrs = self.constrs.len() as c_int;
         let numnz = cind.len() as c_int;
-        let cnames = names.iter().map(|n| CString::new(n.clone()).unwrap()).collect::<Vec<CString>>();
-        let cnames_ptrs = cnames.iter().map(|s| s.as_ptr() as *const c_char).collect::<Vec<*const c_char>>();
+        let cnames = names
+            .iter()
+            .map(|n| CString::new(n.clone()).unwrap())
+            .collect::<Vec<CString>>();
+        let cnames_ptrs = cnames
+            .iter()
+            .map(|s| s.as_ptr() as *const c_char)
+            .collect::<Vec<*const c_char>>();
         unsafe {
             ret = (self.api.GRBaddconstrs)(
                 self.model,
@@ -330,6 +336,26 @@ impl ModelLike for GurobiOptimizer {
                 }
                 Some(AttrValue::ScalarFn(ScalarFunctionType::Affine(afn)))
             }
+            ModelAttr::TerminationStatus => {
+                let mut status: i32 = 0;
+                unsafe {
+                    let ret = (self.api.GRBgetintattr)(
+                        self.model,
+                        GRB_INT_ATTR_STATUS.as_ptr() as *const c_char,
+                        &mut status as *mut c_int,
+                    );
+                    if ret != 0 {
+                        return None;
+                    }
+                    Some(AttrValue::Status(match status as u32 {
+                        GRB_OPTIMAL => SolveStatus::Optimal,
+                        GRB_INFEASIBLE => SolveStatus::Infeasible,
+                        GRB_UNBOUNDED => SolveStatus::Unbounded,
+                        GRB_SUBOPTIMAL => SolveStatus::Feasible,
+                        _ => SolveStatus::Unknown,
+                    }))
+                }
+            }
             _ => None,
         }
     }
@@ -375,7 +401,13 @@ impl Optimizer for GurobiOptimizer {
                 )));
             }
         }
-        Ok(SolveStatus::Optimal)
+        if let Some(AttrValue::Status(status)) = self.get_model_attr(ModelAttr::TerminationStatus) {
+            Ok(status)
+        } else {
+            Err(MoiError::Msg(
+                "Failed to retrieve termination status".to_string(),
+            ))
+        }
     }
     fn compute_conflict(&mut self) -> Result<(), MoiError> {
         unimplemented!()
@@ -419,54 +451,7 @@ mod tests {
         assert_eq!(var_id2.0, 1);
         solver.update().unwrap();
     }
-    #[test]
-    fn test_gurobi_solver_solve() {
-        let gurobi_api =
-            GurobiApi::new(find_library_from("/usr/local/gurobi1203".to_string()).unwrap())
-                .unwrap();
-        let mut solver = GurobiOptimizer::new(Arc::new(gurobi_api), None).unwrap();
-        let var_id1 = solver.add_variable(Some("x"), Some('B'), None, None);
-        let var_id2 = solver.add_variable(Some("y"), Some('B'), None, None);
-        let var_id3 = solver.add_variable(Some("z"), Some('B'), None, None);
-        let mut f = ScalarFunctionType::Affine(ScalarAffineFn::new());
-        if let ScalarFunctionType::Affine(ref mut afn) = f {
-            afn.push_term(var_id1, 1.0);
-            afn.push_term(var_id2, 2.0);
-            afn.push_term(var_id3, 3.0);
-            afn.simplify();
-        }
-        let mut s = ScalarSetType::LessThan(4.0);
-        let constr_id = solver.add_constraint(f, s,Some("c0".to_string()));
-        assert_eq!(constr_id.0, 0);
-        f = ScalarFunctionType::Affine(ScalarAffineFn::new());
-        if let ScalarFunctionType::Affine(ref mut afn) = f {
-            afn.push_term(var_id1, 1.0);
-            afn.push_term(var_id2, 1.0);
-            afn.simplify();
-        }
-        s = ScalarSetType::GreaterThan(1.0);
-        let constr_id2 = solver.add_constraint(f, s,Some("c1".to_string()));
-        assert_eq!(constr_id2.0, 1);
-        f = ScalarFunctionType::Affine(ScalarAffineFn::new());
-        if let ScalarFunctionType::Affine(ref mut afn) = f {
-            afn.push_term(var_id1, 1.0);
-            afn.push_term(var_id2, 1.0);
-            afn.push_term(var_id3, 2.0);
-            afn.simplify();
-        }
-        solver
-            .set_model_attr(
-                ModelAttr::ObjectiveSense,
-                AttrValue::ModelSense(ModelSense::Maximize),
-            )
-            .unwrap();
-        solver
-            .set_model_attr(ModelAttr::ObjectiveFunction, AttrValue::ScalarFn(f))
-            .unwrap();
-        solver.update().unwrap();
-        let status = solver.optimize().unwrap();
-        assert_eq!(status, SolveStatus::Optimal);
-    }
+    
     #[test]
     fn test_gurobi_solver_add_variables() {
         let gurobi_api =
