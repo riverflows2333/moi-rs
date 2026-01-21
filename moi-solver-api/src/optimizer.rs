@@ -23,11 +23,12 @@ pub trait ModelLike {
         lb: Option<BoundType>,
         ub: Option<BoundType>,
     ) -> Vec<VarId>;
-    fn add_constraint(&mut self, f: ScalarFunctionType, s: ScalarSetType) -> ConstrId;
+    fn add_constraint(&mut self, f: ScalarFunctionType, s: ScalarSetType,name: Option<String>) -> ConstrId;
     fn add_constraints(
         &mut self,
         fs: Vec<ScalarFunctionType>,
         ss: Vec<ScalarSetType>,
+        names: Option<Vec<String>>,
     ) -> Vec<ConstrId>;
 
     // fn supports_constraint(&self, f: &ScalarFunctionType, s: &ScalarSetType) -> bool;

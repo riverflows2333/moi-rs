@@ -83,7 +83,6 @@ impl GurobiOptimizer {
             .iter()
             .map(|v| v.vtype as c_char)
             .collect::<Vec<c_char>>();
-        // TODO:add obj coefficients logic
         let (varid, coeff, _) = match &self.obj {
             Some(f) => scalar_function_to_grb(f)?,
             None => (Vec::new(), Vec::new(), 0.0),
@@ -93,6 +92,15 @@ impl GurobiOptimizer {
         for (v, c) in varid.iter().zip(coeff.iter()) {
             obj[v.0] = *c;
         }
+        let varnames = self
+            .vars
+            .iter()
+            .map(|v| CString::new(v.name.clone()).unwrap())
+            .collect::<Vec<CString>>();
+        let varnames_ptrs = varnames
+            .iter()
+            .map(|s| s.as_ptr() as *const c_char)
+            .collect::<Vec<*const c_char>>();
         unsafe {
             ret = (self.api.GRBaddvars)(
                 self.model,
@@ -105,7 +113,7 @@ impl GurobiOptimizer {
                 lb.as_ptr(),
                 ub.as_ptr(),
                 vtype.as_ptr(),
-                std::ptr::null(),
+                varnames_ptrs.as_ptr(),
             );
             if ret != 0 {
                 return Err(format!("Failed to add variables: error code {}", ret));
@@ -131,7 +139,7 @@ impl GurobiOptimizer {
 
         // 更新约束
         // TODO:采用GRBaddconstrs批量添加约束
-        let (cbeg, cind, cval, sense, rhs) = build_constr_matrix(
+        let (cbeg, cind, cval, sense, rhs,names) = build_constr_matrix(
             &self
                 .constrs
                 .clone()
@@ -141,6 +149,8 @@ impl GurobiOptimizer {
         )?;
         let numconstrs = self.constrs.len() as c_int;
         let numnz = cind.len() as c_int;
+        let cnames = names.iter().map(|n| CString::new(n.clone()).unwrap()).collect::<Vec<CString>>();
+        let cnames_ptrs = cnames.iter().map(|s| s.as_ptr() as *const c_char).collect::<Vec<*const c_char>>();
         unsafe {
             ret = (self.api.GRBaddconstrs)(
                 self.model,
@@ -151,7 +161,7 @@ impl GurobiOptimizer {
                 cval.as_ptr() as *const c_double,
                 sense.as_ptr() as *const c_char,
                 rhs.as_ptr() as *const c_double,
-                std::ptr::null(),
+                cnames_ptrs.as_ptr() as *const *const c_char,
             );
             if ret != 0 {
                 return Err(format!("Failed to add constraints: error code {}", ret));
@@ -239,7 +249,12 @@ impl ModelLike for GurobiOptimizer {
         self.needs_update = true;
         (start_id..start_id + n).map(VarId).collect()
     }
-    fn add_constraint(&mut self, f: ScalarFunctionType, s: ScalarSetType) -> ConstrId {
+    fn add_constraint(
+        &mut self,
+        f: ScalarFunctionType,
+        s: ScalarSetType,
+        name: Option<String>,
+    ) -> ConstrId {
         // Implementation of adding a constraint
         let constr_id = self.constrs.len();
         // Add constraint to Gurobi model here
@@ -247,7 +262,7 @@ impl ModelLike for GurobiOptimizer {
             ConstrId(constr_id),
             ConstrInfo {
                 row_index: constr_id,
-                name: "".to_string(),
+                name: name.unwrap_or("".to_string()),
                 f,
                 s,
             },
@@ -259,10 +274,16 @@ impl ModelLike for GurobiOptimizer {
         &mut self,
         fs: Vec<ScalarFunctionType>,
         ss: Vec<ScalarSetType>,
+        names: Option<Vec<String>>,
     ) -> Vec<ConstrId> {
+        let names = match names {
+            Some(n) => n,
+            None => vec!["".to_string(); fs.len()],
+        };
         fs.into_iter()
             .zip(ss.into_iter())
-            .map(|(f, s)| self.add_constraint(f, s))
+            .zip(names.into_iter())
+            .map(|((f, s), name)| self.add_constraint(f, s, Some(name)))
             .collect()
     }
     fn get_model_attr(&self, attr: ModelAttr) -> Option<AttrValue> {
@@ -415,7 +436,7 @@ mod tests {
             afn.simplify();
         }
         let mut s = ScalarSetType::LessThan(4.0);
-        let constr_id = solver.add_constraint(f, s);
+        let constr_id = solver.add_constraint(f, s,Some("c0".to_string()));
         assert_eq!(constr_id.0, 0);
         f = ScalarFunctionType::Affine(ScalarAffineFn::new());
         if let ScalarFunctionType::Affine(ref mut afn) = f {
@@ -424,7 +445,7 @@ mod tests {
             afn.simplify();
         }
         s = ScalarSetType::GreaterThan(1.0);
-        let constr_id2 = solver.add_constraint(f, s);
+        let constr_id2 = solver.add_constraint(f, s,Some("c1".to_string()));
         assert_eq!(constr_id2.0, 1);
         f = ScalarFunctionType::Affine(ScalarAffineFn::new());
         if let ScalarFunctionType::Affine(ref mut afn) = f {
@@ -440,10 +461,7 @@ mod tests {
             )
             .unwrap();
         solver
-            .set_model_attr(
-                ModelAttr::ObjectiveFunction,
-                AttrValue::ScalarFn(f)
-            )
+            .set_model_attr(ModelAttr::ObjectiveFunction, AttrValue::ScalarFn(f))
             .unwrap();
         solver.update().unwrap();
         let status = solver.optimize().unwrap();

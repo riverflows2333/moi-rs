@@ -69,12 +69,13 @@ pub fn scalar_function_to_grb(
 // 通过ConstraintInfo构建Gurobi格式
 pub fn build_constr_matrix(
     constraints: &Vec<ConstrInfo>,
-) -> Result<(Vec<u32>, Vec<u32>, Vec<f64>, Vec<u8>, Vec<f64>), String> {
+) -> Result<(Vec<u32>, Vec<u32>, Vec<f64>, Vec<u8>, Vec<f64>, Vec<String>), String> {
     let mut cbeg = Vec::new();
     let mut cind = Vec::new();
     let mut cval = Vec::new();
     let mut sense = Vec::new();
     let mut rhs = Vec::new();
+    let names = constraints.iter().map(|c| c.name.clone()).collect();
 
     for constraint in constraints {
         let (vars, coeffs, s, r) = scalar_constraint_to_grb(constraint)?;
@@ -84,7 +85,5 @@ pub fn build_constr_matrix(
         sense.push(s);
         rhs.push(r);
     }
-    Ok((cbeg, cind, cval, sense, rhs))
-
-
+    Ok((cbeg, cind, cval, sense, rhs, names))
 }
