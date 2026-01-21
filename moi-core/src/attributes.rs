@@ -1,4 +1,4 @@
-use crate::functions::ScalarAffineFn;
+use crate::{ScalarFunctionType, functions::ScalarAffineFn};
 
 // 属性值枚举
 #[derive(Clone, Debug, PartialEq)]
@@ -8,7 +8,7 @@ pub enum AttrValue {
     Float(f64),
     Bool(bool),
     ModelSense(ModelSense),
-    ScalarAffineFn(ScalarAffineFn),
+    ScalarFn(ScalarFunctionType),
     VecUsize(Vec<usize>),
     Usize(usize),
 }
@@ -38,9 +38,9 @@ impl From<ModelSense> for AttrValue {
         Self::ModelSense(v)
     }
 }
-impl From<ScalarAffineFn> for AttrValue {
-    fn from(v: ScalarAffineFn) -> Self {
-        Self::ScalarAffineFn(v)
+impl From<ScalarFunctionType> for AttrValue {
+    fn from(v: ScalarFunctionType) -> Self {
+        Self::ScalarFn(v)
     }
 }
 impl From<Vec<usize>> for AttrValue {

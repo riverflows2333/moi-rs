@@ -12,7 +12,7 @@ pub struct GurobiOptimizer {
     env: *mut c_void,
     model: *mut c_void,
     needs_update: bool,
-    sense: Option<i32>,
+    sense: Option<ModelSense>,
     obj: Option<ScalarFunctionType>,
     vars: Vec<VarInfo>,
     constrs: HashMap<ConstrId, ConstrInfo>, // 使用 Gurobi 行索引作为键
@@ -64,7 +64,7 @@ impl GurobiOptimizer {
             sense: None,
         })
     }
-    pub fn set_objective(&mut self, f: ScalarFunctionType, sense: i32) {
+    pub fn set_objective(&mut self, f: ScalarFunctionType, sense: ModelSense) {
         self.obj = Some(f);
         self.sense = Some(sense);
         self.needs_update = true;
@@ -113,6 +113,10 @@ impl GurobiOptimizer {
         }
         // 目标函数方向
         if let Some(s) = self.sense {
+            let s = match s {
+                ModelSense::Minimize => GRB_MINIMIZE,
+                ModelSense::Maximize => GRB_MAXIMIZE,
+            };
             unsafe {
                 ret = (self.api.GRBsetintattr)(
                     self.model,
@@ -129,7 +133,8 @@ impl GurobiOptimizer {
         // TODO:采用GRBaddconstrs批量添加约束
         let (cbeg, cind, cval, sense, rhs) = build_constr_matrix(
             &self
-                .constrs.clone()
+                .constrs
+                .clone()
                 .into_iter()
                 .map(|(_cid, constr)| constr.clone())
                 .collect::<Vec<ConstrInfo>>(),
@@ -152,7 +157,7 @@ impl GurobiOptimizer {
                 return Err(format!("Failed to add constraints: error code {}", ret));
             }
         }
-        self.needs_update = false; 
+        self.needs_update = false;
         // for (_cid, constr) in &self.constrs {
         //     let (var_ids, coeffs, senses, rhss) = scalar_constraint_to_grb(constr)?;
         //     let numnz = var_ids.len() as c_int;
@@ -260,6 +265,82 @@ impl ModelLike for GurobiOptimizer {
             .map(|(f, s)| self.add_constraint(f, s))
             .collect()
     }
+    fn get_model_attr(&self, attr: ModelAttr) -> Option<AttrValue> {
+        match attr {
+            ModelAttr::ObjectiveSense => {
+                let mut sense: c_int = 0;
+                unsafe {
+                    let ret = (self.api.GRBgetintattr)(
+                        self.model,
+                        GRB_INT_ATTR_MODELSENSE.as_ptr() as *const c_char,
+                        &mut sense as *mut c_int,
+                    );
+                    if ret != 0 {
+                        return None;
+                    }
+                    match sense {
+                        GRB_MINIMIZE => Some(AttrValue::ModelSense(ModelSense::Minimize)),
+                        GRB_MAXIMIZE => Some(AttrValue::ModelSense(ModelSense::Maximize)),
+                        _ => None,
+                    }
+                }
+            }
+            ModelAttr::ObjectiveFunction => {
+                // 获取目标函数系数
+                let numvars = self.vars.len() as c_int;
+                let mut obj = vec![0.0; numvars as usize];
+                unsafe {
+                    let ret = (self.api.GRBgetdblattrarray)(
+                        self.model,
+                        GRB_DBL_ATTR_OBJ.as_ptr() as *const c_char,
+                        0,
+                        numvars,
+                        obj.as_mut_ptr(),
+                    );
+                    if ret != 0 {
+                        return None;
+                    }
+                }
+                let mut afn = ScalarAffineFn::new();
+                for (i, &coeff) in obj.iter().enumerate() {
+                    if coeff != 0.0 {
+                        afn.push_term(VarId(i), coeff);
+                    }
+                }
+                Some(AttrValue::ScalarFn(ScalarFunctionType::Affine(afn)))
+            }
+            _ => None,
+        }
+    }
+    fn set_model_attr(&mut self, attr: ModelAttr, value: AttrValue) -> Result<(), MoiError> {
+        match attr {
+            ModelAttr::ObjectiveSense => {
+                if let AttrValue::ModelSense(sense) = value {
+                    self.sense = Some(sense);
+                    self.needs_update = true;
+                    Ok(())
+                } else {
+                    Err(MoiError::Msg(
+                        "Invalid attribute value type for ObjectiveSense".to_string(),
+                    ))
+                }
+            }
+            ModelAttr::ObjectiveFunction => {
+                if let AttrValue::ScalarFn(ScalarFunctionType::Affine(afn)) = value {
+                    self.obj = Some(ScalarFunctionType::Affine(afn));
+                    self.needs_update = true;
+                    Ok(())
+                } else {
+                    Err(MoiError::Msg(
+                        "Invalid attribute value type for ObjectiveFunction".to_string(),
+                    ))
+                }
+            }
+            _ => Err(MoiError::Msg(
+                "Setting this model attribute is not supported".to_string(),
+            )),
+        }
+    }
 }
 
 impl Optimizer for GurobiOptimizer {
@@ -352,7 +433,18 @@ mod tests {
             afn.push_term(var_id3, 2.0);
             afn.simplify();
         }
-        solver.set_objective(f, GRB_MAXIMIZE);
+        solver
+            .set_model_attr(
+                ModelAttr::ObjectiveSense,
+                AttrValue::ModelSense(ModelSense::Maximize),
+            )
+            .unwrap();
+        solver
+            .set_model_attr(
+                ModelAttr::ObjectiveFunction,
+                AttrValue::ScalarFn(f)
+            )
+            .unwrap();
         solver.update().unwrap();
         let status = solver.optimize().unwrap();
         assert_eq!(status, SolveStatus::Optimal);

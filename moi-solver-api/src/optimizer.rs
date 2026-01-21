@@ -34,8 +34,8 @@ pub trait ModelLike {
 
     // // Attribute support queries (generic)
     // // Model attributes
-    // fn get_model_attr(&self, attr: ModelAttr) -> Option<AttrValue>;
-    // fn set_model_attr(&mut self, attr: ModelAttr, value: AttrValue) -> Result<(), MoiError>;
+    fn get_model_attr(&self, attr: ModelAttr) -> Option<AttrValue>;
+    fn set_model_attr(&mut self, attr: ModelAttr, value: AttrValue) -> Result<(), MoiError>;
 
     // // Optimizer attributes
     // fn get_optimizer_attr(&self, attr: OptimizerAttr) -> Option<AttrValue>;

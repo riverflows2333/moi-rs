@@ -1,6 +1,6 @@
 use super::affine::ScalarAffineFn;
 use super::super::*;
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug,PartialEq)]
 pub enum ScalarFunctionType {
     Affine(ScalarAffineFn),
     Variable(VarId),
