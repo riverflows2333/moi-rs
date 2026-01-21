@@ -5,6 +5,7 @@ use moi_core::*;
 use moi_solver_api::*;
 use std::collections::HashMap;
 use std::ffi::{CString, c_char, c_double, c_int, c_void};
+use std::ops::Index;
 use std::sync::Arc;
 #[derive(Clone)]
 pub struct GurobiOptimizer {
@@ -14,7 +15,7 @@ pub struct GurobiOptimizer {
     needs_update: bool,
     sense: Option<ModelSense>,
     obj: Option<ScalarFunctionType>,
-    vars: Vec<VarInfo>,
+    pub vars: Vec<VarInfo>,
     constrs: HashMap<ConstrId, ConstrInfo>, // 使用 Gurobi 行索引作为键
 }
 
@@ -197,6 +198,13 @@ impl GurobiOptimizer {
     }
 }
 
+impl Index<VarId>  for GurobiOptimizer {
+    type Output = VarInfo;
+    fn index(&self, index: VarId) -> &Self::Output {
+        &self.vars[index.0]
+    }
+}
+
 impl ModelLike for GurobiOptimizer {
     fn add_variable(
         &mut self,
@@ -214,6 +222,7 @@ impl ModelLike for GurobiOptimizer {
             ub: ub.unwrap_or(f64::INFINITY),
             vtype: vtype.unwrap_or('C'),
             name: name.unwrap_or("").to_string(),
+            value: None,
         });
         self.needs_update = true;
         VarId(var_id)
@@ -250,6 +259,7 @@ impl ModelLike for GurobiOptimizer {
                     Some(NameType::Vector(vec)) => vec[i].clone(),
                     None => "".to_string(),
                 },
+                value: None,
             });
         }
         self.needs_update = true;
@@ -402,6 +412,26 @@ impl Optimizer for GurobiOptimizer {
             }
         }
         if let Some(AttrValue::Status(status)) = self.get_model_attr(ModelAttr::TerminationStatus) {
+            let mut x = vec![0.0; self.vars.len()];
+            unsafe {
+                let ret = (self.api.GRBgetdblattrarray)(
+                    self.model,
+                    GRB_DBL_ATTR_X.as_ptr() as *const c_char,
+                    0,
+                    self.vars.len() as c_int,
+                    x.as_mut_ptr(),
+                );
+                if ret != 0 {
+                    return Err(MoiError::Msg(format!(
+                        "Failed to get variable values: error code {}",
+                        ret
+                    )));
+                }
+            }
+            // 更新变量值
+            for (i, val) in x.iter().enumerate() {
+                self.vars[i].value = Some(*val);
+            }
             Ok(status)
         } else {
             Err(MoiError::Msg(

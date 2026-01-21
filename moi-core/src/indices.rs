@@ -19,6 +19,7 @@ pub struct VarInfo {
     pub ub: f64,
     pub vtype: char, // 'C', 'B', 'I'
     pub name: String,
+    pub value: Option<f64>
 }
 #[derive(Clone)]
 pub struct ConstrInfo {

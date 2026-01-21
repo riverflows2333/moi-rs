@@ -1,11 +1,7 @@
 use moi_core::*;
 use moi_solver_api::*;
-use moi_solver_gurobi::bindings::*;
 use moi_solver_gurobi::dynamic::*;
 use moi_solver_gurobi::wrapper::*;
-use std::ffi::{c_char, c_double, c_int, c_void};
-use std::path::PathBuf;
-use std::ptr::{null, null_mut};
 use std::sync::Arc;
 #[test]
 fn test_gurobi_solver_solve() {
@@ -53,4 +49,7 @@ fn test_gurobi_solver_solve() {
     solver.update().unwrap();
     let status = solver.optimize().unwrap();
     assert_eq!(status, SolveStatus::Optimal);
+    assert_eq!(solver[var_id1].value, Some(1.0));
+    assert_eq!(solver[var_id2].value, Some(0.0));
+    assert_eq!(solver[var_id3].value, Some(1.0));
 }
