@@ -198,7 +198,7 @@ impl GurobiOptimizer {
     }
 }
 
-impl Index<VarId>  for GurobiOptimizer {
+impl Index<VarId> for GurobiOptimizer {
     type Output = VarInfo;
     fn index(&self, index: VarId) -> &Self::Output {
         &self.vars[index.0]
@@ -481,7 +481,7 @@ mod tests {
         assert_eq!(var_id2.0, 1);
         solver.update().unwrap();
     }
-    
+
     #[test]
     fn test_gurobi_solver_add_variables() {
         let gurobi_api =
