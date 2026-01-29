@@ -15,7 +15,7 @@ pub struct GurobiOptimizer {
     needs_update: bool,
     sense: Option<ModelSense>,
     obj: Option<ScalarFunctionType>,
-    pub vars: Vec<VarInfo>,
+    vars: Vec<VarInfo>,
     constrs: HashMap<ConstrId, ConstrInfo>, // 使用 Gurobi 行索引作为键
 }
 
