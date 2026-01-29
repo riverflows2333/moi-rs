@@ -1,167 +1,189 @@
-use moi_core::attributes::{
-    AttrValue, ConstraintAttr, ModelAttr, OptimizerAttr, VariableAttr,
-};
-use moi_core::errors::MoiError;
-use moi_core::functions::{ScalarFunctionType, ScalarAffineFn};
-use moi_core::indices::{ConstrId, VarId};
-use moi_core::sets::ScalarSetType;
-use moi_solver_api::{ModelLike, Optimizer, SolveStatus};
+use moi_core::attributes::{AttrValue, ModelAttr};
+use moi_core::*;
+use moi_solver_api::*;
+use std::collections::HashMap;
 
-/// BridgeOptimizer wraps an inner optimizer and attempts to bridge unsupported
-/// constraints to supported ones.
-pub struct BridgeOptimizer<O> {
-    inner: O,
+/// Refactored BridgeOptimizer to hold model state.
+#[derive(Clone)]
+pub struct BridgeOptimizer {
+    pub vars: Vec<VarInfo>,
+    pub constrs: HashMap<ConstrId, ConstrInfo>,
+    pub obj: Option<ScalarFunctionType>,
+    pub sense: Option<ModelSense>,
+    pub needs_update: bool,
 }
 
-impl<O> BridgeOptimizer<O> {
-    pub fn new(inner: O) -> Self {
-        Self { inner }
-    }
-    pub fn into_inner(self) -> O {
-        self.inner
-    }
-    pub fn inner(&self) -> &O {
-        &self.inner
-    }
-    pub fn inner_mut(&mut self) -> &mut O {
-        &mut self.inner
-    }
-}
-
-/// 表达单侧或等式标量约束，用于桥接到区间形式。
-#[derive(Clone, Debug)]
-pub enum ScalarBoundSet {
-    Ge(f64),
-    Le(f64),
-    Eq(f64),
-}
-
-impl ScalarBoundSet {
-    fn to_interval(&self) -> (f64, f64) {
-        match self {
-            ScalarBoundSet::Ge(l) => (*l, f64::INFINITY),
-            ScalarBoundSet::Le(u) => (f64::NEG_INFINITY, *u),
-            ScalarBoundSet::Eq(v) => (*v, *v),
+impl BridgeOptimizer {
+    pub fn new() -> Self {
+        Self {
+            vars: Vec::new(),
+            constrs: HashMap::new(),
+            obj: None,
+            sense: None,
+            needs_update: false,
         }
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.vars.is_empty() && self.constrs.is_empty()
+    }
+
+    pub fn empty(&mut self) {
+        self.vars.clear();
+        self.constrs.clear();
+        self.obj = None;
+        self.sense = None;
+        self.needs_update = false;
+    }
 }
 
-impl<O> BridgeOptimizer<O>
-where
-    O: ModelLike,
-{
-    /// Explicit API: add an affine scalar-bound constraint, bridging to Interval if needed.
-    pub fn add_affine_bound(&mut self, f: ScalarAffineFn, b: ScalarBoundSet) -> ConstrId {
+impl BridgeOptimizer {
+    /// Explicit API: add an affine scalar-bound constraint.
+    /// This converts the bound to a standard constraint and adds it.
+    pub fn add_affine_bound(&mut self, f: ScalarAffineFn, s: ScalarSetType) -> ConstrId {
         let fty = ScalarFunctionType::Affine(f);
-        let (l, u) = b.to_interval();
-        // 优先尝试模型自身支持的原始形式
-        match b {
-            ScalarBoundSet::Ge(val) => {
-                if self.inner.supports_constraint(&fty, &ScalarSetType::GreaterThan(val)) {
-                    return self.inner.add_constraint(fty, ScalarSetType::GreaterThan(val));
-                }
-            }
-            ScalarBoundSet::Le(val) => {
-                if self.inner.supports_constraint(&fty, &ScalarSetType::LessThan(val)) {
-                    return self.inner.add_constraint(fty, ScalarSetType::LessThan(val));
-                }
-            }
-            ScalarBoundSet::Eq(val) => {
-                if self.inner.supports_constraint(&fty, &ScalarSetType::EqualTo(val)) {
-                    return self.inner.add_constraint(fty, ScalarSetType::EqualTo(val));
-                }
-            }
-        }
-        // 回退到区间形式
-        self.inner.add_constraint(fty, ScalarSetType::Interval(l, u))
+        self.add_constraint(fty, s, None)
     }
 }
 
-impl<O> ModelLike for BridgeOptimizer<O>
-where
-    O: ModelLike,
-{
-    fn add_variable(&mut self) -> VarId {
-        self.inner.add_variable()
-    }
-    fn add_variables(&mut self, n: usize) -> Vec<VarId> {
-        self.inner.add_variables(n)
+impl ModelLike for BridgeOptimizer {
+    fn add_variable(
+        &mut self,
+        name: Option<&str>,
+        vtype: Option<char>,
+        lb: Option<f64>,
+        ub: Option<f64>,
+    ) -> VarId {
+        let var_id = self.vars.len();
+        self.vars.push(VarInfo {
+            col_index: var_id,
+            lb: lb.unwrap_or(0.0),
+            ub: ub.unwrap_or(f64::INFINITY),
+            vtype: vtype.unwrap_or('C'),
+            name: name.unwrap_or("").to_string(),
+            value: None,
+        });
+        self.needs_update = true;
+        VarId(var_id)
     }
 
-    fn add_constraint(&mut self, f: ScalarFunctionType, s: ScalarSetType) -> ConstrId {
-        // MVP: by default delegate. Use explicit APIs for bridging where needed.
-        self.inner.add_constraint(f, s)
+    fn add_variables(
+        &mut self,
+        n: usize,
+        name: Option<NameType>,
+        vtype: Option<Vec<char>>,
+        lb: Option<BoundType>,
+        ub: Option<BoundType>,
+    ) -> Vec<VarId> {
+        let start_id = self.vars.len();
+        let lb_vec = match lb {
+            Some(BoundType::Single(val)) => vec![val; n],
+            Some(BoundType::Vector(vec)) => vec,
+            None => vec![0.0; n],
+        };
+        let ub_vec = match ub {
+            Some(BoundType::Single(val)) => vec![val; n],
+            Some(BoundType::Vector(vec)) => vec,
+            None => vec![f64::INFINITY; n],
+        };
+
+        let get_vtype = |i: usize| -> char {
+            match &vtype {
+                Some(v) => v[i],
+                None => 'C',
+            }
+        };
+
+        for i in 0..n {
+            let var_id = start_id + i;
+            let current_name = match &name {
+                Some(NameType::Single(s)) => format!("{}_{}", s, i),
+                Some(NameType::Vector(vec)) => vec[i].clone(),
+                None => "".to_string(),
+            };
+
+            self.vars.push(VarInfo {
+                col_index: var_id,
+                lb: lb_vec[i],
+                ub: ub_vec[i],
+                vtype: get_vtype(i),
+                name: current_name,
+                value: None,
+            });
+        }
+        self.needs_update = true;
+        (start_id..start_id + n).map(VarId).collect()
     }
 
-    fn supports_constraint(&self, f: &ScalarFunctionType, s: &ScalarSetType) -> bool {
-        // Delegate to inner; bridging capability is exposed via explicit APIs.
-        self.inner.supports_constraint(f, s)
+    fn add_constraint(
+        &mut self,
+        f: ScalarFunctionType,
+        s: ScalarSetType,
+        name: Option<String>,
+    ) -> ConstrId {
+        let constr_id = self.constrs.len();
+        self.constrs.insert(
+            ConstrId(constr_id),
+            ConstrInfo {
+                row_index: constr_id,
+                name: name.unwrap_or_default(),
+                f,
+                s,
+            },
+        );
+        self.needs_update = true;
+        ConstrId(constr_id)
+    }
+
+    fn add_constraints(
+        &mut self,
+        fs: Vec<ScalarFunctionType>,
+        ss: Vec<ScalarSetType>,
+        names: Option<Vec<String>>,
+    ) -> Vec<ConstrId> {
+        let names = names.unwrap_or_else(|| vec!["".to_string(); fs.len()]);
+        fs.into_iter()
+            .zip(ss.into_iter())
+            .zip(names.into_iter())
+            .map(|((f, s), n)| self.add_constraint(f, s, Some(n)))
+            .collect()
     }
 
     fn get_model_attr(&self, attr: ModelAttr) -> Option<AttrValue> {
-        self.inner.get_model_attr(attr)
+        match attr {
+            ModelAttr::ObjectiveSense => self.sense.map(AttrValue::ModelSense),
+            ModelAttr::ObjectiveFunction => self.obj.clone().map(AttrValue::ScalarFn),
+            _ => None,
+        }
     }
 
     fn set_model_attr(&mut self, attr: ModelAttr, value: AttrValue) -> Result<(), MoiError> {
-        self.inner.set_model_attr(attr, value)
-    }
-
-    fn get_optimizer_attr(&self, attr: OptimizerAttr) -> Option<AttrValue> {
-        self.inner.get_optimizer_attr(attr)
-    }
-
-    fn set_optimizer_attr(
-        &mut self,
-        attr: OptimizerAttr,
-        value: AttrValue,
-    ) -> Result<(), MoiError> {
-        self.inner.set_optimizer_attr(attr, value)
-    }
-
-    fn get_variable_attr(&self, attr: VariableAttr, v: VarId) -> Option<AttrValue> {
-        self.inner.get_variable_attr(attr, v)
-    }
-
-    fn set_variable_attr(
-        &mut self,
-        attr: VariableAttr,
-        v: VarId,
-        value: AttrValue,
-    ) -> Result<(), MoiError> {
-        self.inner.set_variable_attr(attr, v, value)
-    }
-
-    fn get_constraint_attr(&self, attr: ConstraintAttr, c: ConstrId) -> Option<AttrValue> {
-        self.inner.get_constraint_attr(attr, c)
-    }
-
-    fn set_constraint_attr(
-        &mut self,
-        attr: ConstraintAttr,
-        c: ConstrId,
-        value: AttrValue,
-    ) -> Result<(), MoiError> {
-        self.inner.set_constraint_attr(attr, c, value)
-    }
-
-
-    fn is_empty(&self) -> bool {
-        self.inner.is_empty()
-    }
-    fn empty(&mut self) {
-        self.inner.empty()
-    }
-
-}
-
-impl<O> Optimizer for BridgeOptimizer<O>
-where
-    O: Optimizer,
-{
-    fn optimize(&mut self) -> Result<SolveStatus, MoiError> {
-        self.inner.optimize()
-    }
-    fn compute_conflict(&mut self) -> Result<(), MoiError> {
-        self.inner.compute_conflict()
+        match attr {
+            ModelAttr::ObjectiveSense => {
+                if let AttrValue::ModelSense(sense) = value {
+                    self.sense = Some(sense);
+                    self.needs_update = true;
+                    Ok(())
+                } else {
+                    Err(MoiError::Msg(
+                        "Invalid attribute value type for ObjectiveSense".to_string(),
+                    ))
+                }
+            }
+            ModelAttr::ObjectiveFunction => {
+                if let AttrValue::ScalarFn(f) = value {
+                    self.obj = Some(f);
+                    self.needs_update = true;
+                    Ok(())
+                } else {
+                    Err(MoiError::Msg(
+                        "Invalid attribute value type for ObjectiveFunction".to_string(),
+                    ))
+                }
+            }
+            _ => Err(MoiError::Msg(
+                "Setting this model attribute is not supported".to_string(),
+            )),
+        }
     }
 }

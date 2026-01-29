@@ -9,6 +9,7 @@ members = [
     "moi-nlp",
     "moi-utils", 
     "moi-solver-gurobi",
-    "moipy"
+    "moipy",
+    "moipy-gurobi"
 ]
 resolver = "2"

@@ -10,6 +10,7 @@ path = "src/lib.rs"
 libloading = "0.9.0"
 moi-core = { path = "../moi-core" }
 moi-solver-api = { path = "../moi-solver-api" }
+moi-bridge ={ path="../moi-bridge" }
 
 [features]
 default = ["gurobi120"]
