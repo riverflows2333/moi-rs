@@ -13,7 +13,7 @@ pub struct GurobiOptimizer {
     api: Arc<GurobiApi>,
     env: *mut c_void,
     model: *mut c_void,
-    pub base: BridgeOptimizer,
+    base: BridgeOptimizer,
 }
 
 impl GurobiOptimizer {
