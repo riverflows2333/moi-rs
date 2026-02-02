@@ -12,4 +12,5 @@ crate-type = ["cdylib"]
 pyo3 = "0.27.2"
 moi-core = { path = "../moi-core" }
 moi-solver-api = { path = "../moi-solver-api" }
+moi-bridge = { path = "../moi-bridge" }
 numpy = "0.27.1"

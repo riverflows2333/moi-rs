@@ -1,9 +1,9 @@
 use crate::bindings::*;
 use crate::dynamic::api::GurobiApi;
 use crate::wrapper::utils::*;
+use moi_bridge::BridgeOptimizer;
 use moi_core::*;
 use moi_solver_api::*;
-use moi_bridge::BridgeOptimizer;
 use std::ffi::{CString, c_char, c_double, c_int, c_void};
 use std::ops::Index;
 use std::sync::Arc;
@@ -58,13 +58,13 @@ impl GurobiOptimizer {
             base: BridgeOptimizer::new(),
         })
     }
-    
+
     pub fn set_objective(&mut self, f: ScalarFunctionType, sense: ModelSense) {
         self.base.obj = Some(f);
         self.base.sense = Some(sense);
         self.base.needs_update = true;
     }
-    
+
     pub fn update(&mut self) -> Result<(), String> {
         let mut ret = 0;
         if !self.base.needs_update {
@@ -100,7 +100,7 @@ impl GurobiOptimizer {
             .map(|s| s.as_ptr() as *const c_char)
             .collect::<Vec<*const c_char>>();
         unsafe {
-             ret = (self.api.GRBaddvars)(
+            ret = (self.api.GRBaddvars)(
                 self.model,
                 numvars,
                 0,
@@ -137,7 +137,8 @@ impl GurobiOptimizer {
 
         // 更新约束
         let (cbeg, cind, cval, sense, rhs, names) = build_constr_matrix(
-            &self.base
+            &self
+                .base
                 .constrs
                 .values()
                 .cloned()
@@ -235,7 +236,7 @@ impl ModelLike for GurobiOptimizer {
                         GRB_INFEASIBLE => SolveStatus::Infeasible,
                         GRB_UNBOUNDED => SolveStatus::Unbounded,
                         GRB_SUBOPTIMAL => SolveStatus::Feasible,
-                         _ => SolveStatus::Unknown,
+                        _ => SolveStatus::Unknown,
                     }))
                 }
             }

@@ -1,6 +1,7 @@
 use pyo3::prelude::*;
 use moi_core::*;
 use moi_solver_api::*;
+use moi_bridge::BridgeOptimizer;
 use std::collections::HashMap;
 #[pyclass]
 struct Model {
@@ -18,4 +19,12 @@ impl Model {
     fn _set_backend(&mut self, backend: Py<PyAny>) {
         self.backend = Some(backend);
     }
+
+    fn add_var(&self, name: String, lb: f64, ub: f64) -> PyResult<()> {
+        todo!()
+    }
+    fn add_vars(&self, names: Vec<String>, lbs: Vec<f64>, ubs: Vec<f64>) -> PyResult<()> {
+        todo!()
+    }
+
 }
