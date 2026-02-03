@@ -1,12 +1,12 @@
+use crate::functions::function::*;
 use crate::indices::VarId;
-
-#[derive(Clone, Debug,PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct AffineTerm {
     pub var: VarId,
     pub coeff: f64,
 }
 
-#[derive(Clone, Debug, Default,PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct ScalarAffineFn {
     pub terms: Vec<AffineTerm>,
     pub constant: f64,
@@ -44,5 +44,52 @@ impl ScalarAffineFn {
         }
         merged.retain(|t| t.coeff != 0.0);
         self.terms = merged;
+    }
+
+    pub fn calculate(&self, rhs: ScalarAffineFn, operation: OperationType) -> ScalarAffineFn {
+        let mut result = ScalarAffineFn::new();
+        match operation {
+            OperationType::Add => {
+                for term in &self.terms {
+                    result.push_term(term.var, term.coeff);
+                }
+                for term in &rhs.terms {
+                    result.push_term(term.var, term.coeff);
+                }
+                result.constant = self.constant + rhs.constant;
+            }
+            OperationType::Sub => {
+                for term in &self.terms {
+                    result.push_term(term.var, term.coeff);
+                }
+                for term in &rhs.terms {
+                    result.push_term(term.var, -term.coeff);
+                }
+                result.constant = self.constant - rhs.constant;
+            }
+            OperationType::Mul => {
+                // NOTE:只判断右侧或左侧为常数的情况
+                if rhs.terms.is_empty() {
+                    let scalar = rhs.constant;
+                    for term in &self.terms {
+                        result.push_term(term.var, term.coeff * scalar);
+                    }
+                    result.constant = self.constant * scalar;
+                } else if self.terms.is_empty() {
+                    let scalar = self.constant;
+                    for term in &rhs.terms {
+                        result.push_term(term.var, term.coeff * scalar);
+                    }
+                    result.constant = rhs.constant * scalar;
+                } else {
+                    panic!("Multiplication results in a non-affine function");
+                }
+            }
+            _ => {
+                panic!("Unsupported operation for ScalarAffineFn");
+            }
+        }
+        result.simplify();
+        result
     }
 }

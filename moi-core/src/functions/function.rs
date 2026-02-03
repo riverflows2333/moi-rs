@@ -6,6 +6,14 @@ pub enum ScalarFunctionType {
     Variable(VarId),
 }
 
+#[derive(Clone, Debug,PartialEq)]
+pub enum OperationType {
+    Add,
+    Sub,
+    Mul,
+    Div,
+}
+
 impl ScalarFunctionType {
     pub fn output_dim(&self) -> usize {
         match self {
