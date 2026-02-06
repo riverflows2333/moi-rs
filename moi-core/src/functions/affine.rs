@@ -46,7 +46,7 @@ impl ScalarAffineFn {
         self.terms = merged;
     }
 
-    pub fn calculate(&self, rhs: ScalarAffineFn, operation: OperationType) -> ScalarAffineFn {
+    pub fn calculate(&self, rhs: &ScalarAffineFn, operation: OperationType) -> ScalarAffineFn {
         let mut result = ScalarAffineFn::new();
         match operation {
             OperationType::Add => {

@@ -1,5 +1,5 @@
-use crate::expr::LinExpr;
 use crate::constr::Constr;
+use crate::expr::LinExpr;
 use moi_core::*;
 use moi_solver_api::*;
 use pyo3::prelude::*;
@@ -34,17 +34,16 @@ impl Var {
         afn.push_term(self.id, 1.0);
         // 判断右侧项类型，为浮点数、变量或线性表达式
         if let Ok(value) = _other.extract::<f64>() {
-            afn.constant += value;
+            afn = afn.calculate(&ScalarAffineFn::with_constant(value), OperationType::Add);
         } else if let Ok(var) = _other.extract::<Var>() {
             afn.push_term(var.id, 1.0);
         } else if let Ok(expr) = _other.extract::<LinExpr>() {
-            for term in expr.get_fn().terms.iter() {
-                afn.push_term(term.var, term.coeff);
-            }
+            afn = afn.calculate(&expr.get_fn(), OperationType::Add);
         } else {
             panic!("Unsupported type for addition with Var");
         }
         afn.simplify();
+
         LinExpr::new(afn)
     }
 
@@ -53,14 +52,11 @@ impl Var {
         afn.push_term(self.id, 1.0);
         // 判断右侧项类型，为浮点数、变量或线性表达式
         if let Ok(value) = _other.extract::<f64>() {
-            afn.constant -= value;
+            afn = afn.calculate(&ScalarAffineFn::with_constant(value), OperationType::Sub);
         } else if let Ok(var) = _other.extract::<Var>() {
             afn.push_term(var.id, -1.0);
         } else if let Ok(expr) = _other.extract::<LinExpr>() {
-            for term in expr.get_fn().terms.iter() {
-                afn.push_term(term.var, -term.coeff);
-            }
-            afn.constant -= expr.get_fn().constant;
+            afn = afn.calculate(&expr.get_fn(), OperationType::Sub);
         } else {
             panic!("Unsupported type for subtraction with Var");
         }
@@ -68,9 +64,28 @@ impl Var {
         LinExpr::new(afn)
     }
 
+    fn __mul__(&self, _other: &Bound<'_, PyAny>) -> LinExpr {
+        let mut afn = ScalarAffineFn::new();
+        // 判断右侧项类型，为浮点数、变量或线性表达式
+        if let Ok(value) = _other.extract::<f64>() {
+            afn.push_term(self.id, value);
+        } else if let Ok(var) = _other.extract::<Var>() {
+            // TODO: 后续会考虑非线性实现
+            panic!("Multiplication of two variables is not supported in linear expressions");
+        } else if let Ok(expr) = _other.extract::<LinExpr>() {
+            panic!(
+                "Multiplication of a variable with a linear expression is not supported in linear expressions"
+            );
+        } else {
+            panic!("Unsupported type for multiplication with Var");
+        }
+        afn.simplify();
+        LinExpr::new(afn)
+    }
+
     fn __le__(&self, _other: &Bound<'_, PyAny>) -> Constr {
         let mut afn = ScalarAffineFn::new();
-        let s :ScalarSetType;
+        let s: ScalarSetType;
         afn.push_term(self.id, 1.0);
         // 判断右侧项类型，为浮点数、变量或线性表达式
         if let Ok(value) = _other.extract::<f64>() {
@@ -79,10 +94,7 @@ impl Var {
             afn.push_term(var.id, -1.0);
             s = ScalarSetType::LessThan(0.0);
         } else if let Ok(expr) = _other.extract::<LinExpr>() {
-            for term in expr.get_fn().terms.iter() {
-                afn.push_term(term.var, -term.coeff);
-            }
-            afn.constant -= expr.get_fn().constant;
+            afn = afn.calculate(&expr.get_fn(), OperationType::Sub);
             s = ScalarSetType::LessThan(0.0);
         } else {
             panic!("Unsupported type for comparison with Var");
@@ -94,7 +106,7 @@ impl Var {
 
     fn __ge__(&self, _other: &Bound<'_, PyAny>) -> Constr {
         let mut afn = ScalarAffineFn::new();
-        let s :ScalarSetType;
+        let s: ScalarSetType;
         afn.push_term(self.id, 1.0);
         // 判断右侧项类型，为浮点数、变量或线性表达式
         if let Ok(value) = _other.extract::<f64>() {
@@ -103,11 +115,29 @@ impl Var {
             afn.push_term(var.id, -1.0);
             s = ScalarSetType::GreaterThan(0.0);
         } else if let Ok(expr) = _other.extract::<LinExpr>() {
-            for term in expr.get_fn().terms.iter() {
-                afn.push_term(term.var, -term.coeff);
-            }
-            afn.constant -= expr.get_fn().constant;
+            afn = afn.calculate(&expr.get_fn(), OperationType::Sub);
             s = ScalarSetType::GreaterThan(0.0);
+        } else {
+            panic!("Unsupported type for comparison with Var");
+        }
+        afn.simplify();
+        let constr_f = ScalarFunctionType::Affine(afn);
+        Constr::new(constr_f, s)
+    }
+
+    fn __eq__(&self, _other: &Bound<'_, PyAny>) -> Constr {
+        let mut afn = ScalarAffineFn::new();
+        let s: ScalarSetType;
+        afn.push_term(self.id, 1.0);
+        // 判断右侧项类型，为浮点数、变量或线性表达式
+        if let Ok(value) = _other.extract::<f64>() {
+            s = ScalarSetType::EqualTo(value);
+        } else if let Ok(var) = _other.extract::<Var>() {
+            afn.push_term(var.id, -1.0);
+            s = ScalarSetType::EqualTo(0.0);
+        } else if let Ok(expr) = _other.extract::<LinExpr>() {
+            afn = afn.calculate(&expr.get_fn(), OperationType::Sub);
+            s = ScalarSetType::EqualTo(0.0);
         } else {
             panic!("Unsupported type for comparison with Var");
         }
