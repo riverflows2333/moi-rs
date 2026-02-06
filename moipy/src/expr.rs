@@ -121,4 +121,8 @@ impl LinExpr {
         afn.simplify();
         Constr::new(ScalarFunctionType::Affine(afn), s)
     }
+
+    fn __str__(&self) -> String {
+        format!("{:?}", self.f)
+    }
 }

@@ -83,6 +83,18 @@ impl Var {
         LinExpr::new(afn)
     }
 
+    fn __rmul__(&self, _other: &Bound<'_, PyAny>) -> LinExpr {
+        let mut afn = ScalarAffineFn::new();
+        // 判断左侧项类型，为浮点数
+        if let Ok(value) = _other.extract::<f64>() {
+            afn.push_term(self.id, value);
+        } else {
+            panic!("Unsupported type for multiplication with Var");
+        }
+        afn.simplify();
+        LinExpr::new(afn)
+    }
+
     fn __le__(&self, _other: &Bound<'_, PyAny>) -> Constr {
         let mut afn = ScalarAffineFn::new();
         let s: ScalarSetType;
@@ -144,6 +156,10 @@ impl Var {
         afn.simplify();
         let constr_f = ScalarFunctionType::Affine(afn);
         Constr::new(constr_f, s)
+    }
+
+    fn __str__(&self) -> String {
+        format!("Var({})", self.id.0)
     }
 }
 
