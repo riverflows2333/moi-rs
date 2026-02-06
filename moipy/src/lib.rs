@@ -11,7 +11,6 @@ use pyo3::prelude::*;
 /// A Python module implemented in Rust.
 #[pymodule]
 mod moipy {
-    use pyo3::prelude::*;
     #[pymodule_export]
     use crate::var::Var;
 
@@ -20,6 +19,5 @@ mod moipy {
 
     #[pymodule_export]
     use crate::constr::Constr;
-
 
 }

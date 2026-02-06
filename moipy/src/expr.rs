@@ -20,7 +20,7 @@ impl LinExpr {
 
 #[pymethods]
 impl LinExpr {
-    pub fn __add__(&self, _other: &Bound<'_, PyAny>) -> LinExpr {
+    fn __add__(&self, _other: &Bound<'_, PyAny>) -> LinExpr {
         let mut afn = self.f.clone();
         // 判断右侧项类型，为浮点数、变量或线性表达式
         if let Ok(value) = _other.extract::<f64>() {
@@ -29,6 +29,18 @@ impl LinExpr {
             afn.push_term(var.get_id(), 1.0);
         } else if let Ok(expr) = _other.extract::<LinExpr>() {
             afn = afn.calculate(&expr.get_fn(), OperationType::Add);
+        } else {
+            panic!("Unsupported type for addition with LinExpr");
+        }
+        afn.simplify();
+        LinExpr::new(afn)
+    }
+
+    fn __radd__(&self, _other: &Bound<'_, PyAny>) -> LinExpr {
+        let mut afn = self.f.clone();
+        // 判断左侧项类型，为浮点数
+        if let Ok(value) = _other.extract::<f64>() {
+            afn = afn.calculate(&ScalarAffineFn::with_constant(value), OperationType::Add);
         } else {
             panic!("Unsupported type for addition with LinExpr");
         }
@@ -52,7 +64,30 @@ impl LinExpr {
         LinExpr::new(afn)
     }
 
+    fn __rsub__(&self, _other: &Bound<'_, PyAny>) -> LinExpr {
+        let mut afn = self.f.clone();
+        // 判断左侧项类型，为浮点数
+        if let Ok(value) = _other.extract::<f64>() {
+            afn = ScalarAffineFn::with_constant(value).calculate(&afn, OperationType::Sub);
+        } else {
+            panic!("Unsupported type for subtraction with LinExpr");
+        }
+        afn.simplify();
+        LinExpr::new(afn)
+    }
+
+
     fn __mul__(&self, _other: &Bound<'_, PyAny>) -> LinExpr {
+        if let Ok(value) = _other.extract::<f64>() {
+            let mut afn = self.f.clone();
+            afn = afn.calculate(&ScalarAffineFn::with_constant(value), OperationType::Mul);
+            LinExpr::new(afn)
+        } else {
+            panic!("Unsupported type for multiplication with LinExpr");
+        }
+    }
+
+    fn __rmul__(&self, _other: &Bound<'_, PyAny>) -> LinExpr {
         if let Ok(value) = _other.extract::<f64>() {
             let mut afn = self.f.clone();
             afn = afn.calculate(&ScalarAffineFn::with_constant(value), OperationType::Mul);
