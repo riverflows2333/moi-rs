@@ -2,7 +2,7 @@
 
 use pyo3::prelude::*;
 
-#[pyclass(eq,eq_int)]
+#[pyclass(eq, eq_int)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum VarType {
     CONTINUOUS = 0,
@@ -10,14 +10,14 @@ pub enum VarType {
     INTEGER = 2,
 }
 
-#[pyclass(eq,eq_int)]
+#[pyclass(eq, eq_int)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Sense {
     MINIMIZE = 0,
     MAXIMIZE = 1,
 }
 
-pub fn register_moi( m: &Bound<'_,PyModule>) -> PyResult<()> {
+pub fn register_moi(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("CONTINUOUS", VarType::CONTINUOUS)?;
     m.add("BINARY", VarType::BINARY)?;
     m.add("INTEGER", VarType::INTEGER)?;
@@ -26,7 +26,7 @@ pub fn register_moi( m: &Bound<'_,PyModule>) -> PyResult<()> {
     Ok(())
 }
 
-#[pymodule(submodule,name = "MOI")]
+#[pymodule(submodule, name = "MOI")]
 pub mod pymoi {
     use crate::moi::register_moi;
     use pyo3::prelude::*;

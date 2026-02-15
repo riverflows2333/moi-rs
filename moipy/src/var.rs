@@ -25,7 +25,7 @@ impl Var {
 #[pymethods]
 impl Var {
     #[new]
-    fn new(id: usize) -> Self {
+    pub fn new(id: usize) -> Self {
         //NOTE: 用于Model当中添加变量方法，一般不会单独实例化变量
         Var { id: VarId(id) }
     }
