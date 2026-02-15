@@ -35,6 +35,10 @@ impl BridgeOptimizer {
         self.sense = None;
         self.needs_update = false;
     }
+
+    pub fn get_var_name_by_id(&self, id: VarId) -> Option<String> {
+        self.vars.get(id.0).map(|var| var.name.clone())
+    }
 }
 
 impl BridgeOptimizer {
@@ -97,11 +101,16 @@ impl ModelLike for BridgeOptimizer {
         for i in 0..n {
             let var_id = start_id + i;
             let current_name = match &name {
-                Some(NameType::Single(s)) => format!("{}_{}", s, i),
+                Some(NameType::Single(s)) => {
+                    if s.is_empty() {
+                        format!("var_x_{}", var_id)
+                    } else {
+                        format!("{}_{}", s, i)
+                    }
+                }
                 Some(NameType::Vector(vec)) => vec[i].clone(),
                 None => "".to_string(),
             };
-
             self.vars.push(VarInfo {
                 col_index: var_id,
                 lb: lb_vec[i],
