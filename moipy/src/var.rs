@@ -192,11 +192,55 @@ impl Var {
 #[pymethods]
 impl Vars {
     #[new]
-    fn new(shape: Vec<usize>, ids: Vec<usize>) -> Self {
+    fn new_py(shape: Vec<usize>, ids: Vec<usize>) -> Self {
         let var_ids = ids.into_iter().map(|id| VarId(id)).collect();
         Vars {
             shape,
             ids: var_ids,
         }
+    }
+    fn __getitem__(&self, idx: &Bound<'_, PyAny>) -> PyResult<Var> {
+        let mut idx_vec: Vec<usize> = Vec::new();
+        if let Ok(shape) = idx.extract::<Vec<usize>>() {
+            idx_vec = shape;
+        } else if let Ok(shape) = idx.extract::<usize>() {
+            idx_vec = vec![shape];
+        } else {
+            return Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(
+                "Expected integers for indices",
+            ));
+        }
+        if idx_vec.len() != self.shape.len() {
+            return Err(pyo3::exceptions::PyIndexError::new_err(
+                "Index dimension does not match variable dimension",
+            ));
+        }
+        let mut flat_index = 0;
+        let mut multiplier = 1;
+        for (i, &idx) in idx_vec.iter().rev().enumerate() {
+            if idx >= self.shape[self.shape.len() - 1 - i] {
+                return Err(pyo3::exceptions::PyIndexError::new_err(
+                    "Index out of bounds",
+                ));
+            }
+            flat_index += idx * multiplier;
+            multiplier *= self.shape[self.shape.len() - 1 - i];
+        }
+        if flat_index >= self.ids.len() {
+            return Err(pyo3::exceptions::PyIndexError::new_err(
+                "Flat index out of bounds",
+            ));
+        }
+        let var_id = self.ids[flat_index];
+        Ok(Var { id: var_id })
+    }
+    fn __str__(&self) -> String {
+        format!("Vars(shape={:?}, ids={:?})", self.shape, self.ids)
+    }
+}
+
+impl Vars {
+    pub fn new(shape: Vec<usize>, ids: Vec<VarId>) -> Self {
+        Vars { shape, ids }
     }
 }
