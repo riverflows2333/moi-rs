@@ -2,14 +2,12 @@ use crate::constr::Constr;
 use crate::moi::*;
 use crate::utils::*;
 use crate::var::*;
-use core::num;
 use moi_bridge::BridgeOptimizer;
 use moi_core::*;
 use moi_solver_api::*;
 use pyo3::prelude::*;
-use pyo3::types::PyIterator;
-use pyo3::types::{PyAny, PyDict, PyTuple};
-use std::fs;
+use pyo3::types::{PyAny,PyTuple};
+
 #[pyclass]
 #[derive(Debug)]
 pub struct Model {
@@ -74,7 +72,7 @@ impl Model {
             .transpose()?
             .unwrap_or(Param::Vector(vec![f64::INFINITY; num_vars]));
         // TODO：目前暂不实现添加目标函数当中的参数，后续可以考虑添加一个专门的接口来设置目标函数参数
-        let obj_param = obj
+        let _ = obj
             .map(|obj| Param::from_py(obj))
             .transpose()?
             .unwrap_or(Param::Vector(vec![0.0; num_vars]));
@@ -130,7 +128,7 @@ impl Model {
         let mut fs = Vec::new();
         let mut ss = Vec::new();
         let mut count = 0;
-        let iter = generator
+        let _ = generator
             .try_iter()?
             .map(|item| {
                 let constr: Constr = item?.extract()?;
