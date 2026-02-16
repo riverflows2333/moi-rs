@@ -27,6 +27,8 @@ class TestModel(TestCase):
             vtype=[MOI.CONTINUOUS, MOI.INTEGER, MOI.BINARY],
         )
         y = model.addVar(name="y")
+        model.addConstr(x[0] + x[1] + x[2] <= 10.0, name="c1")
+        model.addConstrs((x[i] >= 0.0 for i in range(3)), name="c2")
         print(x[2])
         print(y)
 

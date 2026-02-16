@@ -4,7 +4,7 @@ use moi_solver_api::*;
 use std::collections::HashMap;
 
 /// Refactored BridgeOptimizer to hold model state.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct BridgeOptimizer {
     pub vars: Vec<VarInfo>,
     pub constrs: HashMap<ConstrId, ConstrInfo>,

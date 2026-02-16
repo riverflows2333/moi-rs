@@ -40,6 +40,24 @@ pub fn num2index(num: usize, shape: &[usize]) -> Vec<usize> {
     index
 }
 
+pub fn generate_names(base: &str, shape: &[usize]) -> Vec<String> {
+    let total = shape.iter().product();
+    (0..total)
+        .map(|i| {
+            let indices = num2index(i, shape);
+            format!(
+                "{}[{}]",
+                base,
+                indices
+                    .iter()
+                    .map(|idx| idx.to_string())
+                    .collect::<Vec<_>>()
+                    .join(",")
+            )
+        })
+        .collect()
+}
+
 mod tests {
     use super::*;
     #[test]
