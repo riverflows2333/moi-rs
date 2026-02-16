@@ -14,3 +14,4 @@ moi-core = { path = "../moi-core" }
 moi-solver-api = { path = "../moi-solver-api" }
 moi-bridge = { path = "../moi-bridge" }
 numpy = "0.27.1"
+bincode = "2.0.1"

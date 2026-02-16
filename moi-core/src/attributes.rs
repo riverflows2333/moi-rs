@@ -1,7 +1,7 @@
 use crate::{ScalarFunctionType, functions::ScalarAffineFn};
-
+use serde::{Deserialize, Serialize};
 // 属性值枚举
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum AttrValue {
     String(String),
     Int(i64),
@@ -56,14 +56,14 @@ impl From<usize> for AttrValue {
 }
 
 // 求解相关枚举
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum ModelSense {
     Minimize,
     Maximize,
 }
 
 // 模型属性枚举
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum ModelAttr {
     ObjectiveSense,
     ObjectiveFunction,
@@ -77,7 +77,7 @@ pub enum ModelAttr {
 }
 
 // 优化器属性枚举
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum OptimizerAttr {
     SolverName,
     Silent,
@@ -85,14 +85,14 @@ pub enum OptimizerAttr {
 }
 
 // 变量属性枚举
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum VariableAttr {
     VariableName,
     Primal,
 }
 
 // 约束属性枚举
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum ConstraintAttr {
     ConstraintName,
     ConstraintPrimal,
@@ -100,7 +100,7 @@ pub enum ConstraintAttr {
 }
 
 // 求解状态
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum SolveStatus {
     Unknown,
     Optimal,

@@ -1,9 +1,10 @@
+use serde::{Deserialize, Serialize};
 use crate::functions::*;
 use crate::sets::*;
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct VarId(pub usize);
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct ConstrId(pub usize);
 
 impl ConstrId {
@@ -11,7 +12,7 @@ impl ConstrId {
     pub fn raw(&self) -> usize { self.0 }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug,Serialize,Deserialize)]
 pub struct VarInfo {
     pub col_index: usize, // Gurobi 内部的列索引 (0, 1, 2...)
     // 缓存上下界，避免频繁查询 C API
@@ -21,7 +22,7 @@ pub struct VarInfo {
     pub name: String,
     pub value: Option<f64>
 }
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug,Serialize,Deserialize)]
 pub struct ConstrInfo {
     pub row_index: usize, // Gurobi 内部的行索引
     pub name: String,     // 可以在这里存约束类型，方便后续查询

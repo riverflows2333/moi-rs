@@ -1,10 +1,11 @@
 use moi_core::attributes::{AttrValue, ModelAttr};
 use moi_core::*;
 use moi_solver_api::*;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Refactored BridgeOptimizer to hold model state.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug,Serialize,Deserialize)]
 pub struct BridgeOptimizer {
     pub vars: Vec<VarInfo>,
     pub constrs: HashMap<ConstrId, ConstrInfo>,

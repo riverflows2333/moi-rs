@@ -1,12 +1,13 @@
 use super::affine::ScalarAffineFn;
 use super::super::*;
-#[derive(Clone, Debug,PartialEq)]
+use serde::{Deserialize, Serialize};
+#[derive(Clone, Debug,PartialEq,Serialize, Deserialize)]
 pub enum ScalarFunctionType {
     Affine(ScalarAffineFn),
     Variable(VarId),
 }
 
-#[derive(Clone, Debug,PartialEq)]
+#[derive(Clone, Debug,PartialEq,Serialize,Deserialize)]
 pub enum OperationType {
     Add,
     Sub,
