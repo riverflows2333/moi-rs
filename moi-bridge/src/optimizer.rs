@@ -3,9 +3,9 @@ use moi_core::*;
 use moi_solver_api::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-
+use bincode::{Encode, Decode};
 /// Refactored BridgeOptimizer to hold model state.
-#[derive(Clone, Debug,Serialize,Deserialize)]
+#[derive(Clone, Debug,Serialize,Deserialize,Encode,Decode)]
 pub struct BridgeOptimizer {
     pub vars: Vec<VarInfo>,
     pub constrs: HashMap<ConstrId, ConstrInfo>,

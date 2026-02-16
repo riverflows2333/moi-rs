@@ -2,11 +2,12 @@ use crate::constr::Constr;
 use crate::moi::*;
 use crate::utils::*;
 use crate::var::*;
+use bincode::config;
 use moi_bridge::BridgeOptimizer;
 use moi_core::*;
 use moi_solver_api::*;
 use pyo3::prelude::*;
-use pyo3::types::{PyAny,PyTuple};
+use pyo3::types::{PyAny, PyTuple};
 
 #[pyclass]
 #[derive(Debug)]
@@ -154,9 +155,17 @@ impl Model {
         self.model
             .add_constraints(fs, ss, Some(name_param.to_vec(Some(count))));
         Ok(())
-        
     }
     fn __str__(&self) -> PyResult<String> {
         Ok(format!("Model(name={})", self.name))
+    }
+}
+
+impl Model {
+    fn serialize(&self) -> PyResult<Vec<u8>> {
+        let config = config::standard();
+        bincode::encode_to_vec(&self.model, config).map_err(|e| {
+            PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("Serialization error: {}", e))
+        })
     }
 }

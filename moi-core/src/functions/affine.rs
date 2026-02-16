@@ -1,13 +1,14 @@
 use crate::functions::function::*;
 use crate::indices::VarId;
 use serde::{Deserialize, Serialize};
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+use bincode::{Encode, Decode};
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Encode, Decode)]
 pub struct AffineTerm {
     pub var: VarId,
     pub coeff: f64,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, Encode, Decode)]
 pub struct ScalarAffineFn {
     pub terms: Vec<AffineTerm>,
     pub constant: f64,

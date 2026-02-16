@@ -7,3 +7,4 @@ edition = "2021"
 moi-core = { path = "../moi-core" }
 moi-solver-api = { path = "../moi-solver-api" }
 serde ={ version = "1.0.228", features = ["derive"] }
+bincode = "2.0.1"
