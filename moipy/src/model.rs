@@ -162,7 +162,7 @@ impl Model {
 }
 
 impl Model {
-    fn serialize(&self) -> PyResult<Vec<u8>> {
+    pub fn encode(&self) -> PyResult<Vec<u8>> {
         let config = config::standard();
         bincode::encode_to_vec(&self.model, config).map_err(|e| {
             PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("Serialization error: {}", e))

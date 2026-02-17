@@ -45,12 +45,19 @@ pub fn vers_match(detected: &str, expected: &str) -> bool {
     detected == expected
 }
 
-pub fn find_library_from(path: String) -> Option<PathBuf> {
+pub fn find_library_from(path: &String) -> Option<PathBuf> {
     find_library_in_path(&PathBuf::from(path)).map(|(p, _)| p)
 }
 
 fn find_library_in_path(base_path: &Path) -> Option<(PathBuf, String)> {
-    let lib_dir = base_path.join("lib");
+    let path_prefix = if cfg!(target_os = "windows") {
+        "win64"
+    } else if cfg!(target_os = "macos") {
+        ""
+    } else {
+        ""
+    };
+    let lib_dir = base_path.join(path_prefix).join("lib");
     if !lib_dir.exists() {
         return None;
     }

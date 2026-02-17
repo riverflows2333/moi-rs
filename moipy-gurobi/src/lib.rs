@@ -1,4 +1,6 @@
 use pyo3::prelude::*;
+pub mod model;
+pub mod loader;
 
 /// A Python module implemented in Rust.
 #[pymodule]

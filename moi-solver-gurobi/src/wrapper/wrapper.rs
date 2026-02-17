@@ -8,13 +8,16 @@ use std::ffi::{CString, c_char, c_double, c_int, c_void};
 use std::ops::Index;
 use std::sync::Arc;
 
-#[derive(Clone)]
+#[derive(Debug)]
 pub struct GurobiOptimizer {
     api: Arc<GurobiApi>,
     env: *mut c_void,
     model: *mut c_void,
     base: BridgeOptimizer,
 }
+
+unsafe impl Send for GurobiOptimizer {}
+unsafe impl Sync for GurobiOptimizer {}
 
 impl GurobiOptimizer {
     pub fn new(api: Arc<GurobiApi>, name: Option<&str>) -> Result<Self, String> {

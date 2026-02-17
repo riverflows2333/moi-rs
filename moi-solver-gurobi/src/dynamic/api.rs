@@ -3,7 +3,7 @@ use std::{
     ffi::{c_char, c_double, c_int, c_void},
     path::PathBuf,
 };
-
+#[derive(Debug)]
 pub struct GurobiApi {
     _lib: Library,
     // version functions
@@ -157,13 +157,13 @@ mod tests {
     #[test]
     fn test_load_gurobi_api() {
         let gurobi_api =
-            GurobiApi::new(find_library_from("/usr/local/gurobi1203".to_string()).unwrap());
+            GurobiApi::new(find_library_from(&"/usr/local/gurobi1203".to_string()).unwrap());
         assert!(gurobi_api.is_ok());
     }
     #[test]
     fn test_version_function() {
         let gurobi_api =
-            GurobiApi::new(find_library_from("/usr/local/gurobi1203".to_string()).unwrap())
+            GurobiApi::new(find_library_from(&"/usr/local/gurobi1203".to_string()).unwrap())
                 .unwrap();
         unsafe {
             let mut major = 0;

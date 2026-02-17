@@ -6,8 +6,8 @@ pub fn scalar_constraint_to_grb(
 ) -> Result<(Vec<VarId>, Vec<f64>, u8, f64), String> {
     let mut var = Vec::new();
     let mut coeff = Vec::new();
-    let mut sense = 0;
-    let mut rhs = 0.0;
+    let sense;
+    let mut rhs;
     match &constraint.s {
         ScalarSetType::LessThan(b) => {
             sense = GRB_LESS_EQUAL;
@@ -50,7 +50,7 @@ pub fn scalar_function_to_grb(
 ) -> Result<(Vec<VarId>, Vec<f64>, f64), String> {
     let mut var = Vec::new();
     let mut coeff = Vec::new();
-    let mut constant = 0.0;
+    let constant;
     match function {
         ScalarFunctionType::Affine(afn) => {
             for term in &afn.terms {

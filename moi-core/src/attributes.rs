@@ -1,4 +1,4 @@
-use crate::{ScalarFunctionType, functions::ScalarAffineFn};
+use crate::{ScalarFunctionType};
 use serde::{Deserialize, Serialize};
 use bincode::{Encode, Decode};
 // 属性值枚举
