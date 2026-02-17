@@ -32,6 +32,14 @@ class TestModel(TestCase):
         print(x[2])
         print(y)
 
+    def test_optimize(self):
+        model = Model("test_model")
+        x = model.addVars(2, lb=0.0, ub=10.0, name="x", vtype=MOI.CONTINUOUS)
+        model.addConstr(x[0] + x[1] <= 10.0, name="c1")
+        model.setObjective(x[0] + 2 * x[1], sense=MOI.MAXIMIZE)
+        model.set_backend("gurobi")
+        model.optimize()
+
 
 if __name__ == "__main__":
     import unittest

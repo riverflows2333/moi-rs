@@ -1,4 +1,6 @@
 use crate::constr::Constr;
+use crate::expr::LinExpr;
+use crate::model;
 use crate::moi::*;
 use crate::utils::*;
 use crate::var::*;
@@ -27,9 +29,7 @@ impl Model {
             backend: None,
         }
     }
-    fn _set_backend(&mut self, backend: Py<PyAny>) {
-        self.backend = Some(backend);
-    }
+
     #[pyo3(signature = (lb=0., ub=std::f64::INFINITY, obj=0.0, vtype=None, name=""),name="addVar")]
     fn add_var(
         &mut self,
@@ -156,6 +156,53 @@ impl Model {
             .add_constraints(fs, ss, Some(name_param.to_vec(Some(count))));
         Ok(())
     }
+    #[pyo3(signature = (expr, sense),name="setObjective")]
+    fn set_objective(&mut self, expr: &Bound<'_, PyAny>, sense: Sense) -> PyResult<()> {
+        let obj_expr = expr.extract::<LinExpr>()?;
+        let _ = self.model.set_model_attr(
+            ModelAttr::ObjectiveFunction,
+            AttrValue::ScalarFn(ScalarFunctionType::Affine(obj_expr.get_fn())),
+        );
+        let _ = self.model.set_model_attr(
+            ModelAttr::ObjectiveSense,
+            AttrValue::ModelSense(match sense {
+                Sense::MINIMIZE => ModelSense::Minimize,
+                Sense::MAXIMIZE => ModelSense::Maximize,
+            }),
+        );
+        Ok(())
+    }
+    // 选择求解器后端
+    fn set_backend(&mut self, py: Python, backend: &str) {
+        // 通过Python attach搜索库中包含的moipy-后端名称的模块，并调用其Model类创建对象；
+        let model_instance = py.import(&format!("moipy_{}", backend))
+            .and_then(|module| module.getattr("Model"))
+            .and_then(|model_class| model_class.call0())
+            .expect(&format!("Failed to set backend to '{}'. Please ensure the corresponding module is available.", backend));
+        // 将BridgeOptimizer进行编码，在后端Model当中进行解码并更新模型；
+        let encoded_model = self.encode().expect("Failed to encode model");
+        model_instance
+            .call_method1("decode_and_update", (encoded_model,))
+            .expect("Failed to update model in backend");
+        // 将后端Model的实例保存到当前Model的backend属性当中，以便后续调用求解等接口时使用
+        self.backend = Some(model_instance.into());
+    }
+    // 调用底层求解器进行优化
+    fn optimize(&mut self) -> PyResult<()> {
+        if let Some(ref backend) = self.backend {
+            Python::attach(|py| {
+                backend
+                    .call_method0(py, "optimize")
+                    .expect("Failed to call optimize on backend");
+            });
+            Ok(())
+        } else {
+            Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
+                "No backend set. Please call set_backend() before optimizing.",
+            ))
+        }
+    }
+
     fn __str__(&self) -> PyResult<String> {
         Ok(format!("Model(name={})", self.name))
     }

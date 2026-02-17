@@ -3,12 +3,13 @@ use std::sync::Arc;
 use crate::loader::*;
 use bincode::config;
 use moi_bridge::BridgeOptimizer;
+use moi_solver_api::optimizer::Optimizer;
 use moi_solver_gurobi::*;
 use pyo3::prelude::*;
 use std::path::PathBuf;
+
 #[pyclass]
 pub struct Model {
-    env: EnvLoader,
     optimizer: GurobiOptimizer,
 }
 
@@ -32,22 +33,27 @@ impl Model {
         let api =
             GurobiApi::new(PathBuf::from(loader_to_dll_path(&loader.clone()).unwrap())).unwrap();
         let optimizer = GurobiOptimizer::new(Arc::new(api), name).unwrap();
-        Self {
-            env: loader,
-            optimizer,
-        }
+        Self { optimizer }
+    }
+    pub fn decode_and_update(&mut self, data: &[u8]) -> PyResult<String> {
+        let config = config::standard();
+        let model: BridgeOptimizer = bincode::decode_from_slice(data, config)
+            .map_err(|e| {
+                PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+                    "Deserialization error: {}",
+                    e
+                ))
+            })?
+            .0;
+        let _ = self.optimizer.update(Some(model));
+        Ok("Model updated successfully".into())
+    }
+    pub fn optimize(&mut self) -> PyResult<String> {
+        let _ = self.optimizer.optimize();
+        Ok("Optimization completed".into())
     }
 }
 
 impl Model {
-    pub fn decode_and_update(&mut self, data: &[u8]) -> Result<(), String> {
-        let config = config::standard();
-        let model: BridgeOptimizer = bincode::decode_from_slice(data, config)
-            .map_err(|e| {
-                format!("Deserialization error: {}", e)
-            })?
-            .0;
-        let ret = self.optimizer.update(Some(model));
-        ret
-    }
+    //
 }

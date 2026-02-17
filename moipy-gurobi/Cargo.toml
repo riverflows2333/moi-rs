@@ -13,3 +13,4 @@ pyo3 = "0.27.2"
 bincode = "2.0.1"
 moi-solver-gurobi = { path = "../moi-solver-gurobi" }
 moi-bridge ={ path = "../moi-bridge" }
+moi-solver-api = { path = "../moi-solver-api" }

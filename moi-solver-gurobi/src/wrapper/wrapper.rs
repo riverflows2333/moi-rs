@@ -70,11 +70,11 @@ impl GurobiOptimizer {
 
     pub fn update(&mut self, model: Option<BridgeOptimizer>) -> Result<(), String> {
         let mut ret;
-        if !self.base.needs_update {
-            return Ok(());
-        }
         if let Some(m) = model {
             self.base = m;
+        }
+        if !self.base.needs_update {
+            return Ok(());
         }
         // 更新变量
         let numvars = self.base.vars.len() as c_int;

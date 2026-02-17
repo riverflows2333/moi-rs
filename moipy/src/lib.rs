@@ -11,7 +11,6 @@ use pyo3::prelude::*;
 #[pymodule]
 mod moipy {
     use crate::moi::*;
-    use pyo3::prelude::*;
 
     #[pymodule_export]
     use crate::var::Var;
