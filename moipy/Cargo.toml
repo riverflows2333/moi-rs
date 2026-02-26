@@ -9,7 +9,7 @@ name = "moipy"
 crate-type = ["cdylib"]
 
 [dependencies]
-pyo3 = "0.27.2"
+pyo3 = {version = "0.27.2"}
 moi-core = { path = "../moi-core" }
 moi-solver-api = { path = "../moi-solver-api" }
 moi-bridge = { path = "../moi-bridge" }

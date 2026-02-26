@@ -35,9 +35,9 @@ class TestModel(TestCase):
     def test_optimize(self):
         model = Model("test_model")
         x = model.addVars(3, name="x", vtype=MOI.BINARY)
-        model.addConstr(x[0] + 2 *x[1] + 3* x[2] <= 4.0, name="c1")
+        model.addConstr(x[0] + 2 * x[1] + 3 * x[2] <= 4.0, name="c1")
         model.addConstr(x[0] + x[1] >= 1.0, name="c2")
-        model.setObjective(x[0] + x[1] + 2* x[2], sense=MOI.MAXIMIZE)
+        model.setObjective(x[0] + x[1] + 2 * x[2], sense=MOI.MAXIMIZE)
         model.set_backend("gurobi")
         model.optimize()
 
