@@ -51,7 +51,8 @@ pub fn find_library_from(path: &String) -> Option<PathBuf> {
 
 fn find_library_in_path(base_path: &Path) -> Option<(PathBuf, String)> {
     let path_prefix = if cfg!(target_os = "windows") {
-        "win64"
+        // NOTE: Gurobi求解器在windows当中会有一个win64的子目录，这里需要GUROBI_HOME指向到这个子目录
+        ""
     } else if cfg!(target_os = "macos") {
         ""
     } else {
