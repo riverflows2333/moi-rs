@@ -8,7 +8,6 @@ class Vars:
 class LinExpr:
     pass
 
-
 class Constr:
     pass
 
@@ -19,7 +18,6 @@ class MOI:
         self.INTEGER = "INTEGER"
         self.MINIMIZE = "MINIMIZE"
         self.MAXIMIZE = "MAXIMIZE"
-
 
 class Model:
     def __init__(self, name: str) -> None: ...
@@ -49,3 +47,6 @@ class Model:
     def setObjective(self, expr: LinExpr, sense: MOI) -> None: ...
     def set_backend(self, backend: str) -> None: ...
     def optimize(self) -> None: ...
+
+# 常用函数
+def quicksum(generator: list[Var | LinExpr]) -> LinExpr: ...

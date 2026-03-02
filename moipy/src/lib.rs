@@ -5,6 +5,7 @@ pub mod model;
 pub mod moi;
 pub mod var;
 pub mod utils;
+pub mod function;
 use pyo3::prelude::*;
 /// A Python module implemented in Rust.
 
@@ -26,4 +27,7 @@ mod moipy {
 
     #[pymodule_export]
     use crate::model::Model;
+
+    #[pymodule_export]
+    use crate::function::quicksum;
 }

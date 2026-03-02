@@ -1,4 +1,4 @@
-from moipy import MOI, Model
+from moipy import MOI, Model, quicksum
 from unittest import TestCase
 
 
@@ -41,6 +41,13 @@ class TestModel(TestCase):
         model.set_backend("gurobi")
         model.optimize()
 
+    def test_quicksum(self):
+        model = Model("test_model")
+        x = model.addVars(3, name="x", vtype=MOI.BINARY)
+        model.addConstr(quicksum(x[i] for i in range(3)) <= 2.0, name="c1")
+        model.setObjective(quicksum(x[i] for i in range(3)), sense=MOI.MAXIMIZE)
+        model.set_backend("gurobi")
+        model.optimize()
 
 if __name__ == "__main__":
     import unittest

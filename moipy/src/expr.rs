@@ -18,6 +18,12 @@ impl LinExpr {
     }
 }
 
+impl Default for LinExpr {
+    fn default() -> Self {
+        LinExpr { f: ScalarAffineFn::new() }
+    }
+}
+
 #[pymethods]
 impl LinExpr {
     fn __add__(&self, _other: &Bound<'_, PyAny>) -> LinExpr {
