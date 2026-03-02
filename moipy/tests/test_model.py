@@ -38,7 +38,7 @@ class TestModel(TestCase):
         model.addConstr(x[0] + 2 * x[1] + 3 * x[2] <= 4.0, name="c1")
         model.addConstr(x[0] + x[1] >= 1.0, name="c2")
         model.setObjective(x[0] + x[1] + 2 * x[2], sense=MOI.MAXIMIZE)
-        model.set_backend("gurobi")
+        model.setBackend("gurobi")
         model.optimize()
 
     def test_quicksum(self):
@@ -46,7 +46,7 @@ class TestModel(TestCase):
         x = model.addVars(3, name="x", vtype=MOI.BINARY)
         model.addConstr(quicksum(x[i] for i in range(3)) <= 2.0, name="c1")
         model.setObjective(quicksum(x[i] for i in range(3)), sense=MOI.MAXIMIZE)
-        model.set_backend("gurobi")
+        model.setBackend("gurobi")
         model.optimize()
 
 if __name__ == "__main__":
