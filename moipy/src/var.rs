@@ -14,8 +14,7 @@ pub struct Var {
 #[derive(Clone, Debug)]
 pub struct Vars {
     shape: Vec<usize>,
-    ids: Vec<VarId>,
-    values: Option<Vec<f64>>,
+    vars: Vec<Var>,
 }
 
 impl Var {
@@ -198,11 +197,10 @@ impl Var {
 impl Vars {
     #[new]
     fn new_py(shape: Vec<usize>, ids: Vec<usize>) -> Self {
-        let var_ids = ids.into_iter().map(|id| VarId(id)).collect();
+        let var_ids: Vec<VarId> = ids.into_iter().map(|id| VarId(id)).collect();
         Vars {
             shape,
-            ids: var_ids,
-            values: None,
+            vars: var_ids.into_iter().map(|id| Var { id, x: None }).collect(),
         }
     }
     fn __getitem__(&self, idx: &Bound<'_, PyAny>) -> PyResult<Var> {
@@ -232,23 +230,24 @@ impl Vars {
             flat_index += idx * multiplier;
             multiplier *= self.shape[self.shape.len() - 1 - i];
         }
-        if flat_index >= self.ids.len() {
+        if flat_index >= self.vars.len() {
             return Err(pyo3::exceptions::PyIndexError::new_err(
                 "Flat index out of bounds",
             ));
         }
-        let var_id = self.ids[flat_index];
-        let value = self
-            .values
-            .as_ref()
-            .and_then(|vals| vals.get(flat_index).cloned());
+        let var_id = self.vars[flat_index].id;
+        let value = self.vars[flat_index].x;
         Ok(Var {
             id: var_id,
             x: value,
         })
     }
     fn __str__(&self) -> String {
-        format!("Vars(shape={:?}, ids={:?})", self.shape, self.ids)
+        format!(
+            "Vars(shape={:?}, ids={:?})",
+            self.shape,
+            self.vars.iter().map(|v| v.id.0).collect::<Vec<usize>>()
+        )
     }
 }
 
@@ -256,8 +255,7 @@ impl Vars {
     pub fn new(shape: Vec<usize>, ids: Vec<VarId>) -> Self {
         Vars {
             shape,
-            ids,
-            values: None,
+            vars: ids.into_iter().map(|id| Var { id, x: None }).collect(),
         }
     }
 }
