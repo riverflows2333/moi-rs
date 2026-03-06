@@ -8,13 +8,13 @@ use moi_bridge::BridgeOptimizer;
 use moi_core::*;
 use moi_solver_api::*;
 use pyo3::prelude::*;
-use pyo3::types::{PyAny, PyTuple};
-
+use pyo3::types::{PyAny, PyDict, PyTuple};
+use std::sync::{Arc, RwLock};
 #[pyclass]
 #[derive(Debug)]
 pub struct Model {
     name: String,
-    model: BridgeOptimizer,
+    model: SharedBridge,
     backend: Option<Py<PyAny>>,
 }
 
@@ -24,7 +24,7 @@ impl Model {
     fn new(name: String) -> Self {
         Model {
             name,
-            model: BridgeOptimizer::new(),
+            model: Arc::new(RwLock::new(BridgeOptimizer::new())),
             backend: None,
         }
     }
@@ -38,7 +38,8 @@ impl Model {
         vtype: Option<VarType>,
         name: &str,
     ) -> PyResult<Var> {
-        let var_id = self.model.add_variable(
+        let mut model = self.model.write().unwrap();
+        let var_id = model.add_variable(
             Some(&name),
             vtype.map(|t| match t {
                 VarType::CONTINUOUS => 'C',
@@ -48,6 +49,8 @@ impl Model {
             Some(lb),
             Some(ub),
         );
+        let mut var = Var::new(var_id.0);
+        var.set_bridge(&self.model);
         Ok(Var::new(var_id.0))
     }
     #[pyo3(signature = (*indices, lb=None, ub=None, obj=None, vtype=None, name=None),name="addVars")]
@@ -91,7 +94,8 @@ impl Model {
         } else {
             name_param
         };
-        let varids = self.model.add_variables(
+        let mut model = self.model.write().unwrap();
+        let varids = model.add_variables(
             num_vars,
             Some(NameType::Vector(name_param.to_vec(Some(num_vars)))),
             Some(
@@ -109,14 +113,17 @@ impl Model {
             Some(BoundType::Vector(ub_param.to_vec(Some(num_vars)))),
         );
         let var_ids = varids.into_iter().map(|id| VarId(id.0)).collect();
-        Ok(Vars::new(shape_vec, var_ids))
+        let mut vars = Vars::new(shape_vec.clone(), var_ids);
+        vars.set_bridge(&self.model);
+        Ok(vars)
     }
 
     #[pyo3(signature = (constr, name=None),name="addConstr")]
     fn add_constr(&mut self, constr: &Bound<'_, Constr>, name: Option<&str>) -> PyResult<()> {
         let constr: Constr = constr.extract()?;
-        self.model
-            .add_constraint(constr.get_f(), constr.get_s(), name.map(|s| s.to_string()));
+
+        let mut model = self.model.write().unwrap();
+        model.add_constraint(constr.get_f(), constr.get_s(), name.map(|s| s.to_string()));
         Ok(())
     }
     #[pyo3(signature = (generator, name=None),name="addConstrs")]
@@ -151,18 +158,19 @@ impl Model {
             name_param
         };
 
-        self.model
-            .add_constraints(fs, ss, Some(name_param.to_vec(Some(count))));
+        let mut model = self.model.write().unwrap();
+        model.add_constraints(fs, ss, Some(name_param.to_vec(Some(count))));
         Ok(())
     }
     #[pyo3(signature = (expr, sense),name="setObjective")]
     fn set_objective(&mut self, expr: &Bound<'_, PyAny>, sense: Sense) -> PyResult<()> {
         let obj_expr = expr.extract::<LinExpr>()?;
-        let _ = self.model.set_model_attr(
+        let mut model = self.model.write().unwrap();
+        let _ = model.set_model_attr(
             ModelAttr::ObjectiveFunction,
             AttrValue::ScalarFn(ScalarFunctionType::Affine(obj_expr.get_fn())),
         );
-        let _ = self.model.set_model_attr(
+        let _ = model.set_model_attr(
             ModelAttr::ObjectiveSense,
             AttrValue::ModelSense(match sense {
                 Sense::MINIMIZE => ModelSense::Minimize,
@@ -172,7 +180,7 @@ impl Model {
         Ok(())
     }
     // 选择求解器后端
-    #[pyo3(name="setBackend")]
+    #[pyo3(name = "setBackend")]
     fn set_backend(&mut self, py: Python, backend: &str) {
         // 通过Python attach搜索库中包含的moipy-后端名称的模块，并调用其Model类创建对象；
         let model_instance = py.import(&format!("moipy_{}", backend))
@@ -188,21 +196,48 @@ impl Model {
         self.backend = Some(model_instance.into());
     }
     // 调用底层求解器进行优化
-    fn optimize(&mut self) -> PyResult<()> {
+    fn optimize(&mut self, py: Python) -> PyResult<()> {
         if let Some(ref backend) = self.backend {
-            Python::attach(|py| {
-                backend
-                    .call_method0(py, "optimize")
-                    .expect("Failed to call optimize on backend");
-            });
+            let result_obj = backend
+                .call_method0(py, "optimize")
+                .expect("Failed to call optimize on backend");
+            if let Ok(result_dict) = result_obj.cast_bound::<PyDict>(py) {
+                // 2. 解析返回的载荷
+                let _: String = result_dict
+                    .get_item("status")?
+                    .unwrap()
+                    .extract::<String>()?;
+                let obj_val: f64 = result_dict
+                    .get_item("objval")?
+                    .unwrap()
+                    .extract::<f64>()?;
+                let x_values: Vec<f64> = result_dict
+                    .get_item("x_values")?
+                    .unwrap()
+                    .extract::<Vec<f64>>()?;
+
+                // 3. 核心：获取写锁，更新 moipy 自己的 BridgeOptimizer
+                let mut bridge = self.model.write().unwrap(); // 这里的 bridge 是 SharedBridge
+                bridge.objval = Some(obj_val);
+                // 将结果回填到各个变量的 VarInfo 中
+                for (i, &val) in x_values.iter().enumerate() {
+                    bridge.vars.get_mut(i).map(|var_info| {
+                        var_info.value = Some(val);
+                    });
+                }
+                // dbg!(&bridge.vars.iter().map(|v| v.value).collect::<Vec<_>>());
+            } else {
+                return Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
+                    "Backend optimize() did not return a dictionary with results.",
+                ));
+            }
             Ok(())
         } else {
             Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
-                "No backend set. Please call set_backend() before optimizing.",
+                "No backend set. Please call setBackend() before optimizing.",
             ))
         }
     }
-
     fn __str__(&self) -> PyResult<String> {
         Ok(format!("Model(name={})", self.name))
     }

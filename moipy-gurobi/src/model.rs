@@ -1,12 +1,12 @@
-use std::sync::Arc;
-
 use crate::loader::*;
 use bincode::config;
 use moi_bridge::BridgeOptimizer;
 use moi_solver_api::optimizer::Optimizer;
 use moi_solver_gurobi::*;
 use pyo3::prelude::*;
+use pyo3::types::PyDict;
 use std::path::PathBuf;
+use std::{result, sync::Arc};
 
 #[pyclass]
 pub struct Model {
@@ -48,14 +48,17 @@ impl Model {
         let _ = self.optimizer.update(Some(model));
         Ok("Model updated successfully".into())
     }
-    pub fn optimize(&mut self) -> PyResult<String> {
+    pub fn optimize(&mut self, py: Python) -> PyResult<Py<PyAny>> {
         let _ = self.optimizer.optimize().map_err(|e| {
-            PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
-                "Optimization error: {}",
-                e
-            ))
+            PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("Optimization error: {}", e))
         })?;
-        Ok("Optimization completed".into())
+        // 获取并返回求解结果
+        let results = self.optimizer.get_results();
+        let result_dict = PyDict::new(py);
+        result_dict.set_item("status", results.0.clone())?;
+        result_dict.set_item("objval", results.1)?;
+        result_dict.set_item("x_values", results.2.clone())?;
+        Ok(result_dict.into())
     }
 }
 

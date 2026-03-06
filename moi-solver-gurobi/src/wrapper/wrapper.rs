@@ -8,7 +8,7 @@ use std::ffi::{CString, c_char, c_double, c_int, c_void};
 use std::ops::Index;
 use std::sync::Arc;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct GurobiOptimizer {
     api: Arc<GurobiApi>,
     env: *mut c_void,
@@ -179,6 +179,65 @@ impl GurobiOptimizer {
         self.base.needs_update = false;
         Ok(())
     }
+    pub fn get_var_value(&self, var_id: VarId) -> Option<f64> {
+        self.base.get_value_by_var_id(var_id)
+    }
+    pub fn return_results(&mut self) -> Result<SolveStatus, MoiError> {
+        if let Some(AttrValue::Status(status)) = self.get_model_attr(ModelAttr::TerminationStatus) {
+            let mut x = vec![0.0; self.base.vars.len()];
+            let mut objval: f64 = 0.0;
+            unsafe {
+                // 获取求解结果
+                let ret = (self.api.GRBgetdblattrarray)(
+                    self.model,
+                    GRB_DBL_ATTR_X.as_ptr() as *const c_char,
+                    0,
+                    self.base.vars.len() as c_int,
+                    x.as_mut_ptr(),
+                );
+                if ret != 0 {
+                    return Err(MoiError::Msg(format!(
+                        "Failed to get variable values: error code {}",
+                        ret
+                    )));
+                }
+                // 获取目标函数值
+                let ret = (self.api.GRBgetdblattr)(
+                    self.model,
+                    GRB_DBL_ATTR_OBJVAL.as_ptr() as *const c_char,
+                    &mut objval as *mut c_double,
+                );
+                if ret != 0 {
+                    return Err(MoiError::Msg(format!(
+                        "Failed to get objective value: error code {}",
+                        ret
+                    )));
+                }
+            }
+            // 更新变量值
+            for (i, val) in x.iter().enumerate() {
+                self.base.vars[i].value = Some(*val);
+            }
+            // 目标函数值
+            self.base.objval = Some(objval);
+            Ok(status)
+        } else {
+            Err(MoiError::Msg(
+                "Failed to retrieve termination status".into(),
+            ))
+        }
+    }
+
+    pub fn get_results(&self) -> (String, Option<f64>, Option<Vec<f64>>) {
+        // 返回求解状态、目标函数值、变量值
+        if let Some(AttrValue::Status(_)) = self.get_model_attr(ModelAttr::TerminationStatus) {
+            let objval = self.base.objval;
+            let varvals = self.base.vars.iter().map(|v| v.value.unwrap()).collect();
+            ("Optimal".to_string(), objval, Some(varvals))
+        } else {
+            ("Unknown".to_string(), None, None)
+        }
+    }
 }
 
 impl Index<VarId> for GurobiOptimizer {
@@ -265,33 +324,7 @@ impl Optimizer for GurobiOptimizer {
                 )));
             }
         }
-        if let Some(AttrValue::Status(status)) = self.get_model_attr(ModelAttr::TerminationStatus) {
-            let mut x = vec![0.0; self.base.vars.len()];
-            unsafe {
-                let ret = (self.api.GRBgetdblattrarray)(
-                    self.model,
-                    GRB_DBL_ATTR_X.as_ptr() as *const c_char,
-                    0,
-                    self.base.vars.len() as c_int,
-                    x.as_mut_ptr(),
-                );
-                if ret != 0 {
-                    return Err(MoiError::Msg(format!(
-                        "Failed to get variable values: error code {}",
-                        ret
-                    )));
-                }
-            }
-            // 更新变量值
-            for (i, val) in x.iter().enumerate() {
-                self.base.vars[i].value = Some(*val);
-            }
-            Ok(status)
-        } else {
-            Err(MoiError::Msg(
-                "Failed to retrieve termination status".to_string(),
-            ))
-        }
+        self.return_results()
     }
     fn compute_conflict(&mut self) -> Result<(), MoiError> {
         unimplemented!()

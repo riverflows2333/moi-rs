@@ -23,20 +23,20 @@ class Model:
     def __init__(self, name: str) -> None: ...
     def addVar(
         self,
-        lb: float = 0.0,
-        ub: float = float("inf"),
+        lb: float = 0.0 | list[float],
+        ub: float = float("inf") | list[float],
         obj: float = 0.0,
-        vtype: str = "C",
-        name: str = "",
+        vtype: str = "C" | list[str],
+        name: str = "" | list[str],
     ) -> "Var": ...
     def addVars(
         self,
         *args: int,
-        lb: float = 0.0,
-        ub: float = float("inf"),
+        lb: float = 0.0 | list[float],
+        ub: float = float("inf") | list[float],
         obj: float = 0.0,
-        vtype: str = "C",
-        name: str = "",
+        vtype: str = "C" | list[str],
+        name: str = "" | list[str],
     ) -> "Vars": ...
     def addConstr(
         self,

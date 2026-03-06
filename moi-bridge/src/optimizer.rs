@@ -11,6 +11,7 @@ pub struct BridgeOptimizer {
     pub constrs: HashMap<ConstrId, ConstrInfo>,
     pub obj: Option<ScalarFunctionType>,
     pub sense: Option<ModelSense>,
+    pub objval: Option<f64>,
     pub needs_update: bool,
 }
 
@@ -21,6 +22,7 @@ impl BridgeOptimizer {
             constrs: HashMap::new(),
             obj: None,
             sense: None,
+            objval: None,
             needs_update: false,
         }
     }
@@ -34,11 +36,16 @@ impl BridgeOptimizer {
         self.constrs.clear();
         self.obj = None;
         self.sense = None;
+        self.objval = None;
         self.needs_update = false;
     }
 
     pub fn get_var_name_by_id(&self, id: VarId) -> Option<String> {
         self.vars.get(id.0).map(|var| var.name.clone())
+    }
+
+    pub fn get_value_by_var_id(&self, id: VarId) -> Option<f64> {
+        self.vars.get(id.0).and_then(|var| var.value)
     }
 }
 

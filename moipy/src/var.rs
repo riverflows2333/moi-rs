@@ -1,12 +1,17 @@
 use crate::constr::Constr;
 use crate::expr::LinExpr;
+use crate::model::Model;
+use moi_bridge::BridgeOptimizer;
 use moi_core::*;
 use moi_solver_api::*;
 use pyo3::prelude::*;
+use crate::utils::*;
+
 #[pyclass]
-#[derive(Clone, Debug)]
+#[derive(Debug, Clone)]
 pub struct Var {
     id: VarId,
+    bridge: Option<SharedBridge>,
 }
 
 #[pyclass]
@@ -14,6 +19,7 @@ pub struct Var {
 pub struct Vars {
     shape: Vec<usize>,
     var_ids: Vec<VarId>,
+    bridge: Option<SharedBridge>,
 }
 
 impl Var {
@@ -29,8 +35,21 @@ impl Var {
         //NOTE: 用于Model当中添加变量方法，一般不会单独实例化变量
         Var {
             id: VarId(id),
+            bridge: None,
         }
     }
+    #[getter]
+    pub fn get_x(&self) -> Option<f64> {
+        //NOTE: 目前仅作为占位，后续会通过桥接优化器获取变量的值
+        if let Some(bridge) = &self.bridge {
+            let bridge = bridge.read().unwrap();
+            bridge.get_value_by_var_id(self.id)
+        } else {
+            None
+        }
+    }
+
+
     fn __add__(&self, _other: &Bound<'_, PyAny>) -> LinExpr {
         let mut afn = ScalarAffineFn::new();
         afn.push_term(self.id, 1.0);
@@ -196,13 +215,10 @@ impl Vars {
     #[new]
     fn new_py(shape: Vec<usize>, ids: Vec<usize>) -> Self {
         let var_ids: Vec<VarId> = ids.into_iter().map(|id| VarId(id)).collect();
-        Vars {
-            shape,
-            var_ids,
-        }
+        Vars { shape, var_ids, bridge: None }
     }
     fn __getitem__(&self, idx: &Bound<'_, PyAny>) -> PyResult<Var> {
-        let mut idx_vec: Vec<usize> = Vec::new();
+        let idx_vec: Vec<usize>;
         if let Ok(shape) = idx.extract::<Vec<usize>>() {
             idx_vec = shape;
         } else if let Ok(shape) = idx.extract::<usize>() {
@@ -234,16 +250,16 @@ impl Vars {
             ));
         }
         let var_id = self.var_ids[flat_index];
-        Ok(Var {
-            id: var_id,
-        })
+        Ok(Var { id: var_id, bridge: self.bridge.clone() })
     }
     fn __str__(&self) -> String {
-        format!(
-            "Vars(shape={:?}, ids={:?})",
-            self.shape,
-            self.var_ids
-        )
+        format!("Vars(shape={:?}, ids={:?})", self.shape, self.var_ids)
+    }
+}
+
+impl Var {
+    pub fn set_bridge(&mut self, bridge: &SharedBridge) {
+        self.bridge = Some(bridge.clone());
     }
 }
 
@@ -252,6 +268,10 @@ impl Vars {
         Vars {
             shape,
             var_ids: ids,
+            bridge: None,
         }
+    }
+    pub fn set_bridge(&mut self, bridge: &SharedBridge) {
+        self.bridge = Some(bridge.clone());
     }
 }
