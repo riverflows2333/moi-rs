@@ -40,7 +40,7 @@ class TestModel(TestCase):
         model.setObjective(x[0] + x[1] + 2 * x[2], sense=MOI.MAXIMIZE)
         model.setBackend("gurobi")
         model.optimize()
-        print(x[2].x)
+        print(x[2].X)
         print(model.ObjVal)
 
     def test_quicksum(self):

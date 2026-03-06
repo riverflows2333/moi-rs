@@ -39,6 +39,7 @@ impl Var {
         }
     }
     #[getter]
+    #[pyo3(name = "X")]
     pub fn get_x(&self) -> Option<f64> {
         //NOTE: 目前仅作为占位，后续会通过桥接优化器获取变量的值
         if let Some(bridge) = &self.bridge {
