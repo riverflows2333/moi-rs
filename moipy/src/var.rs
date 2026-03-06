@@ -7,14 +7,13 @@ use pyo3::prelude::*;
 #[derive(Clone, Debug)]
 pub struct Var {
     id: VarId,
-    pub x: Option<f64>,
 }
 
 #[pyclass]
 #[derive(Clone, Debug)]
 pub struct Vars {
     shape: Vec<usize>,
-    vars: Vec<Var>,
+    var_ids: Vec<VarId>,
 }
 
 impl Var {
@@ -30,7 +29,6 @@ impl Var {
         //NOTE: 用于Model当中添加变量方法，一般不会单独实例化变量
         Var {
             id: VarId(id),
-            x: None,
         }
     }
     fn __add__(&self, _other: &Bound<'_, PyAny>) -> LinExpr {
@@ -200,7 +198,7 @@ impl Vars {
         let var_ids: Vec<VarId> = ids.into_iter().map(|id| VarId(id)).collect();
         Vars {
             shape,
-            vars: var_ids.into_iter().map(|id| Var { id, x: None }).collect(),
+            var_ids,
         }
     }
     fn __getitem__(&self, idx: &Bound<'_, PyAny>) -> PyResult<Var> {
@@ -230,23 +228,21 @@ impl Vars {
             flat_index += idx * multiplier;
             multiplier *= self.shape[self.shape.len() - 1 - i];
         }
-        if flat_index >= self.vars.len() {
+        if flat_index >= self.var_ids.len() {
             return Err(pyo3::exceptions::PyIndexError::new_err(
                 "Flat index out of bounds",
             ));
         }
-        let var_id = self.vars[flat_index].id;
-        let value = self.vars[flat_index].x;
+        let var_id = self.var_ids[flat_index];
         Ok(Var {
             id: var_id,
-            x: value,
         })
     }
     fn __str__(&self) -> String {
         format!(
             "Vars(shape={:?}, ids={:?})",
             self.shape,
-            self.vars.iter().map(|v| v.id.0).collect::<Vec<usize>>()
+            self.var_ids
         )
     }
 }
@@ -255,7 +251,7 @@ impl Vars {
     pub fn new(shape: Vec<usize>, ids: Vec<VarId>) -> Self {
         Vars {
             shape,
-            vars: ids.into_iter().map(|id| Var { id, x: None }).collect(),
+            var_ids: ids,
         }
     }
 }
