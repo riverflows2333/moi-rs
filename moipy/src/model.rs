@@ -241,6 +241,12 @@ impl Model {
     fn __str__(&self) -> PyResult<String> {
         Ok(format!("Model(name={})", self.name))
     }
+    #[getter]
+    #[pyo3(name = "ObjVal")]
+    pub fn get_objval(&self) -> PyResult<Option<f64>> {
+        let bridge = self.model.read().unwrap();
+        Ok(bridge.objval)
+    }
 }
 
 impl Model {
