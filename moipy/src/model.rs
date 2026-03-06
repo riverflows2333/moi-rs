@@ -1,6 +1,5 @@
 use crate::constr::Constr;
 use crate::expr::LinExpr;
-use crate::model;
 use crate::moi::*;
 use crate::utils::*;
 use crate::var::*;

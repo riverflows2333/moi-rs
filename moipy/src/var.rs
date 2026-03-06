@@ -7,6 +7,7 @@ use pyo3::prelude::*;
 #[derive(Clone, Debug)]
 pub struct Var {
     id: VarId,
+    pub x: Option<f64>,
 }
 
 #[pyclass]
@@ -14,6 +15,7 @@ pub struct Var {
 pub struct Vars {
     shape: Vec<usize>,
     ids: Vec<VarId>,
+    values: Option<Vec<f64>>,
 }
 
 impl Var {
@@ -27,7 +29,10 @@ impl Var {
     #[new]
     pub fn new(id: usize) -> Self {
         //NOTE: 用于Model当中添加变量方法，一般不会单独实例化变量
-        Var { id: VarId(id) }
+        Var {
+            id: VarId(id),
+            x: None,
+        }
     }
     fn __add__(&self, _other: &Bound<'_, PyAny>) -> LinExpr {
         let mut afn = ScalarAffineFn::new();
@@ -197,6 +202,7 @@ impl Vars {
         Vars {
             shape,
             ids: var_ids,
+            values: None,
         }
     }
     fn __getitem__(&self, idx: &Bound<'_, PyAny>) -> PyResult<Var> {
@@ -232,7 +238,14 @@ impl Vars {
             ));
         }
         let var_id = self.ids[flat_index];
-        Ok(Var { id: var_id })
+        let value = self
+            .values
+            .as_ref()
+            .and_then(|vals| vals.get(flat_index).cloned());
+        Ok(Var {
+            id: var_id,
+            x: value,
+        })
     }
     fn __str__(&self) -> String {
         format!("Vars(shape={:?}, ids={:?})", self.shape, self.ids)
@@ -241,6 +254,10 @@ impl Vars {
 
 impl Vars {
     pub fn new(shape: Vec<usize>, ids: Vec<VarId>) -> Self {
-        Vars { shape, ids }
+        Vars {
+            shape,
+            ids,
+            values: None,
+        }
     }
 }

@@ -49,7 +49,12 @@ impl Model {
         Ok("Model updated successfully".into())
     }
     pub fn optimize(&mut self) -> PyResult<String> {
-        let _ = self.optimizer.optimize();
+        let _ = self.optimizer.optimize().map_err(|e| {
+            PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+                "Optimization error: {}",
+                e
+            ))
+        })?;
         Ok("Optimization completed".into())
     }
 }
