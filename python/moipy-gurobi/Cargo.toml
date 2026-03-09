@@ -11,7 +11,7 @@ name = "moipy_gurobi"
 crate-type = ["cdylib"]
 
 [dependencies]
-pyo3 = "0.27.2"
+pyo3.workspace = true
 bincode = "2.0.1"
 moi-solver-gurobi.workspace = true
 moi-bridge.workspace = true

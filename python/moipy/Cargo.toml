@@ -10,7 +10,7 @@ name = "moipy"
 crate-type = ["cdylib"]
 
 [dependencies]
-pyo3 = {version = "0.27.2"}
+pyo3.workspace = true
 moi-core.workspace = true
 moi-solver-api.workspace = true
 moi-bridge.workspace = true

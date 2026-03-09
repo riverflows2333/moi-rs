@@ -1,0 +1,104 @@
+name: Build and Publish PyPI
+
+on:
+  push:
+    tags:
+      - 'moipy-v*'
+      - 'moipy-gurobi-v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # 1. 编译各平台的 Wheel 包
+  build-wheels:
+    name: Build ${{ matrix.package }} on ${{ matrix.platform.runner }} (${{ matrix.platform.target }})
+    runs-on: ${{ matrix.platform.runner }}
+    
+    # ⚠️ 核心逻辑：拦截不匹配的 Tag
+    if: startsWith(github.ref, format('refs/tags/{0}-v', matrix.package)) || github.event_name == 'workflow_dispatch'
+    
+    strategy:
+      fail-fast: false
+      matrix:
+        package: [moipy, moipy-gurobi]
+        # 精简后的架构：只保留主流的 Linux/Win/Mac 的 64位和 ARM64 架构
+        platform:
+          - runner: ubuntu-22.04
+            target: x86_64
+          - runner: ubuntu-22.04
+            target: aarch64
+          - runner: windows-latest
+            target: x64
+          - runner: macos-15-intel # Mac Intel
+            target: x86_64
+          - runner: macos-latest   # Mac Apple Silicon (M1/M2/M3)
+            target: aarch64
+
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10' # 编译时使用一个稳定的版本即可 (abi3保证兼容性)
+
+      - name: Build wheels
+        uses: PyO3/maturin-action@v1
+        with:
+          # 指向正确的子目录
+          manifest-path: python/${{ matrix.package }}/Cargo.toml
+          target: ${{ matrix.platform.target }}
+          args: --release --out dist
+          sccache: 'true'
+          manylinux: auto
+
+      - name: Upload wheels
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-${{ matrix.package }}-${{ matrix.platform.runner }}-${{ matrix.platform.target }}
+          path: dist
+
+  # 2. 编译源码包 (SDist)
+  sdist:
+    name: Build ${{ matrix.package }} sdist
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, format('refs/tags/{0}-v', matrix.package)) || github.event_name == 'workflow_dispatch'
+    strategy:
+      matrix:
+        package: [moipy, moipy-gurobi]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build sdist
+        uses: PyO3/maturin-action@v1
+        with:
+          manifest-path: python/${{ matrix.package }}/Cargo.toml
+          command: sdist
+          args: --out dist
+      - name: Upload sdist
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdist-${{ matrix.package }}
+          path: dist
+
+  # 3. 安全发布到 PyPI
+  release:
+    name: Release to PyPI
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [build-wheels, sdist]
+    
+    permissions:
+      id-token: write # Trusted Publishing 必须
+      contents: write # 如果需要自动创建 GitHub Release，需要这个权限
+      
+    steps:
+      # 下载所有编译好的包到一个目录
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      # 官方推荐的安全发布 Action
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
