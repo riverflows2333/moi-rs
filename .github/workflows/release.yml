@@ -63,7 +63,8 @@ jobs:
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
-          manifest-path: python/${{ matrix.package }}/Cargo.toml
+          # ⚠️ 核心修改：使用 working-directory 替代 manifest-path
+          working-directory: python/${{ matrix.package }}
           target: ${{ matrix.platform.target }}
           args: --release --out dist
           sccache: 'true'
@@ -73,7 +74,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: wheels-${{ matrix.package }}-${{ matrix.platform.runner }}-${{ matrix.platform.target }}
-          path: dist
+          # ⚠️ 注意：因为工作目录变了，打包输出的路径也变成了子目录下的 dist
+          path: python/${{ matrix.package }}/dist
 
   # 3. 编译源码包 (SDist)
   sdist:
@@ -85,17 +87,21 @@ jobs:
         package: ${{ fromJSON(needs.prepare.outputs.packages) }}
     steps:
       - uses: actions/checkout@v4
+      
       - name: Build sdist
         uses: PyO3/maturin-action@v1
         with:
-          manifest-path: python/${{ matrix.package }}/Cargo.toml
+          # ⚠️ 同样修改为 working-directory
+          working-directory: python/${{ matrix.package }}
           command: sdist
           args: --out dist
+          
       - name: Upload sdist
         uses: actions/upload-artifact@v4
         with:
           name: sdist-${{ matrix.package }}
-          path: dist
+          # ⚠️ 同样修改上传路径
+          path: python/${{ matrix.package }}/dist
 
   # 4. 安全发布到 PyPI
   release:
