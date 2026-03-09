@@ -1,0 +1,10 @@
+[package]
+name = "moi-solver-api"
+# 继承工作区的通用配置
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+moi-core.workspace = true

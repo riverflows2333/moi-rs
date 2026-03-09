@@ -1,0 +1,13 @@
+[package]
+name = "moi-bridge"
+# 继承工作区的通用配置
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+moi-core.workspace = true
+moi-solver-api.workspace = true
+serde ={ version = "1.0.228", features = ["derive"] }
+bincode = "2.0.1"

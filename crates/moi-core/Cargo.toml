@@ -1,0 +1,12 @@
+[package]
+name = "moi-core"
+# 继承工作区的通用配置
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+thiserror = "2.0.17"
+serde ={ version = "1.0.228", features = ["derive"] }
+bincode = "2.0.1"

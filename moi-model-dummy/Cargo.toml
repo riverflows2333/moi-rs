@@ -1,8 +1,0 @@
-[package]
-name = "moi-model-dummy"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-moi-core = { path = "../moi-core" }
-moi-solver-api = { path = "../moi-solver-api" }

@@ -1,0 +1,8 @@
+[package]
+name = "moi-utils"
+# 继承工作区的通用配置
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+[dependencies]
