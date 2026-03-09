@@ -11,19 +11,36 @@ permissions:
   contents: read
 
 jobs:
-  # 1. 编译各平台的 Wheel 包
+  # 1. 新增：动态解析 Tag，决定需要编译的包
+  prepare:
+    name: Prepare Matrix
+    runs-on: ubuntu-latest
+    outputs:
+      # 将 bash 脚本输出的包列表传递给后续 Job
+      packages: ${{ steps.set-packages.outputs.packages }}
+    steps:
+      - name: Determine target packages based on tag
+        id: set-packages
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/moipy-v* ]]; then
+            echo 'packages=["moipy"]' >> "$GITHUB_OUTPUT"
+          elif [[ "${{ github.ref }}" == refs/tags/moipy-gurobi-v* ]]; then
+            echo 'packages=["moipy-gurobi"]' >> "$GITHUB_OUTPUT"
+          else
+            # 如果是手动触发 (workflow_dispatch)，默认同时编译两个包
+            echo 'packages=["moipy", "moipy-gurobi"]' >> "$GITHUB_OUTPUT"
+          fi
+
+  # 2. 编译各平台的 Wheel 包
   build-wheels:
     name: Build ${{ matrix.package }} on ${{ matrix.platform.runner }} (${{ matrix.platform.target }})
+    needs: prepare # 依赖 prepare 任务
     runs-on: ${{ matrix.platform.runner }}
-    
-    # ⚠️ 核心逻辑：拦截不匹配的 Tag
-    if: startsWith(github.ref, format('refs/tags/{0}-v', matrix.package)) || github.event_name == 'workflow_dispatch'
-    
     strategy:
       fail-fast: false
       matrix:
-        package: [moipy, moipy-gurobi]
-        # 精简后的架构：只保留主流的 Linux/Win/Mac 的 64位和 ARM64 架构
+        # ⚠️ 核心魔法：从 prepare 任务动态读取需要编译的包
+        package: ${{ fromJSON(needs.prepare.outputs.packages) }}
         platform:
           - runner: ubuntu-22.04
             target: x86_64
@@ -31,9 +48,9 @@ jobs:
             target: aarch64
           - runner: windows-latest
             target: x64
-          - runner: macos-15-intel # Mac Intel
+          - runner: macos-15-intel
             target: x86_64
-          - runner: macos-latest   # Mac Apple Silicon (M1/M2/M3)
+          - runner: macos-latest
             target: aarch64
 
     steps:
@@ -41,12 +58,11 @@ jobs:
       
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.10' # 编译时使用一个稳定的版本即可 (abi3保证兼容性)
+          python-version: '3.10'
 
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
-          # 指向正确的子目录
           manifest-path: python/${{ matrix.package }}/Cargo.toml
           target: ${{ matrix.platform.target }}
           args: --release --out dist
@@ -59,14 +75,14 @@ jobs:
           name: wheels-${{ matrix.package }}-${{ matrix.platform.runner }}-${{ matrix.platform.target }}
           path: dist
 
-  # 2. 编译源码包 (SDist)
+  # 3. 编译源码包 (SDist)
   sdist:
     name: Build ${{ matrix.package }} sdist
+    needs: prepare # 同样依赖 prepare 任务
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, format('refs/tags/{0}-v', matrix.package)) || github.event_name == 'workflow_dispatch'
     strategy:
       matrix:
-        package: [moipy, moipy-gurobi]
+        package: ${{ fromJSON(needs.prepare.outputs.packages) }}
     steps:
       - uses: actions/checkout@v4
       - name: Build sdist
@@ -81,7 +97,7 @@ jobs:
           name: sdist-${{ matrix.package }}
           path: dist
 
-  # 3. 安全发布到 PyPI
+  # 4. 安全发布到 PyPI
   release:
     name: Release to PyPI
     runs-on: ubuntu-latest
@@ -89,16 +105,14 @@ jobs:
     needs: [build-wheels, sdist]
     
     permissions:
-      id-token: write # Trusted Publishing 必须
-      contents: write # 如果需要自动创建 GitHub Release，需要这个权限
+      id-token: write 
+      contents: write 
       
     steps:
-      # 下载所有编译好的包到一个目录
       - uses: actions/download-artifact@v4
         with:
           path: dist
           merge-multiple: true
 
-      # 官方推荐的安全发布 Action
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
