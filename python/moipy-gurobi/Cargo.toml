@@ -1,5 +1,6 @@
 [package]
 name = "moipy-gurobi"
+version = "0.0.1"
 edition.workspace = true
 authors.workspace = true
 
