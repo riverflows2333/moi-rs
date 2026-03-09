@@ -4,7 +4,7 @@ pub mod loader;
 
 /// A Python module implemented in Rust.
 #[pymodule]
-mod moipy_gurobi {
+mod moirspy_gurobi {
 
     /// Formats the sum of two numbers as string.
     #[pymodule_export]

@@ -1,4 +1,4 @@
-from moipy import MOI, Model, quicksum
+from moirspy import MOI, Model, quicksum
 from unittest import TestCase
 
 

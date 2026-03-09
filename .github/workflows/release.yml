@@ -3,8 +3,8 @@ name: Build and Publish PyPI
 on:
   push:
     tags:
-      - 'moipy-v*'
-      - 'moipy-gurobi-v*'
+      - 'moirspy-v*'
+      - 'moirspy-gurobi-v*'
   workflow_dispatch:
 
 permissions:
@@ -22,13 +22,13 @@ jobs:
       - name: Determine target packages based on tag
         id: set-packages
         run: |
-          if [[ "${{ github.ref }}" == refs/tags/moipy-v* ]]; then
-            echo 'packages=["moipy"]' >> "$GITHUB_OUTPUT"
-          elif [[ "${{ github.ref }}" == refs/tags/moipy-gurobi-v* ]]; then
-            echo 'packages=["moipy-gurobi"]' >> "$GITHUB_OUTPUT"
+          if [[ "${{ github.ref }}" == refs/tags/moirspy-v* ]]; then
+            echo 'packages=["moirspy"]' >> "$GITHUB_OUTPUT"
+          elif [[ "${{ github.ref }}" == refs/tags/moirspy-gurobi-v* ]]; then
+            echo 'packages=["moirspy-gurobi"]' >> "$GITHUB_OUTPUT"
           else
             # 如果是手动触发 (workflow_dispatch)，默认同时编译两个包
-            echo 'packages=["moipy", "moipy-gurobi"]' >> "$GITHUB_OUTPUT"
+            echo 'packages=["moirspy", "moirspy-gurobi"]' >> "$GITHUB_OUTPUT"
           fi
 
   # 2. 编译各平台的 Wheel 包

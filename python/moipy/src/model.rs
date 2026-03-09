@@ -182,8 +182,8 @@ impl Model {
     // 选择求解器后端
     #[pyo3(name = "setBackend")]
     fn set_backend(&mut self, py: Python, backend: &str) {
-        // 通过Python attach搜索库中包含的moipy-后端名称的模块，并调用其Model类创建对象；
-        let model_instance = py.import(&format!("moipy_{}", backend))
+        // 通过Python attach搜索库中包含的moirspy-后端名称的模块，并调用其Model类创建对象；
+        let model_instance = py.import(&format!("moirspy_{}", backend))
             .and_then(|module| module.getattr("Model"))
             .and_then(|model_class| model_class.call0())
             .expect(&format!("Failed to set backend to '{}'. Please ensure the corresponding module is available.", backend));

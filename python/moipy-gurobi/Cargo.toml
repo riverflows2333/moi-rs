@@ -1,5 +1,5 @@
 [package]
-name = "moipy-gurobi"
+name = "moirspy-gurobi"
 version = "0.0.1"
 edition.workspace = true
 authors.workspace = true
@@ -7,7 +7,7 @@ authors.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [lib]
-name = "moipy_gurobi"
+name = "moirspy_gurobi"
 crate-type = ["cdylib"]
 
 [dependencies]

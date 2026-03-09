@@ -10,7 +10,7 @@ use pyo3::prelude::*;
 /// A Python module implemented in Rust.
 
 #[pymodule]
-mod moipy {
+mod moirspy {
     use crate::moi::*;
 
     #[pymodule_export]
