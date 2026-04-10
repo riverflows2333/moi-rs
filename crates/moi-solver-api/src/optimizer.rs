@@ -38,10 +38,10 @@ pub trait ModelLike {
     fn get_model_attr(&self, attr: ModelAttr) -> Option<AttrValue>;
     fn set_model_attr(&mut self, attr: ModelAttr, value: AttrValue) -> Result<(), MoiError>;
 
-    // // Optimizer attributes
-    // fn get_optimizer_attr(&self, attr: OptimizerAttr) -> Option<AttrValue>;
-    // fn set_optimizer_attr(&mut self, attr: OptimizerAttr, value: AttrValue)
-    //     -> Result<(), MoiError>;
+    // Optimizer attributes
+    fn get_optimizer_attr(&self, attr: OptimizerAttr) -> Option<AttrValue>;
+    fn set_optimizer_attr(&mut self, attr: OptimizerAttr, value: AttrValue)
+        -> Result<(), MoiError>;
 
     // // Variable attributes (optional ID associated)
     // fn get_variable_attr(&self, attr: VariableAttr, v: VarId) -> Option<AttrValue>;

@@ -78,11 +78,12 @@ pub enum ModelAttr {
 }
 
 // 优化器属性枚举
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, Encode, Decode)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, Encode, Decode)]
 pub enum OptimizerAttr {
     SolverName,
     Silent,
     TimeLimit,
+    Raw(String)
 }
 
 // 变量属性枚举

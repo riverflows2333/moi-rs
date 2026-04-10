@@ -13,6 +13,7 @@ pub struct BridgeOptimizer {
     pub sense: Option<ModelSense>,
     pub objval: Option<f64>,
     pub needs_update: bool,
+    pub raw_params: HashMap<OptimizerAttr, AttrValue>,
 }
 
 impl BridgeOptimizer {
@@ -24,6 +25,7 @@ impl BridgeOptimizer {
             sense: None,
             objval: None,
             needs_update: false,
+            raw_params: HashMap::new(),
         }
     }
 
@@ -38,6 +40,7 @@ impl BridgeOptimizer {
         self.sense = None;
         self.objval = None;
         self.needs_update = false;
+        self.raw_params.clear();
     }
 
     pub fn get_var_name_by_id(&self, id: VarId) -> Option<String> {
@@ -202,5 +205,18 @@ impl ModelLike for BridgeOptimizer {
                 "Setting this model attribute is not supported".to_string(),
             )),
         }
+    }
+
+    fn get_optimizer_attr(&self, attr: OptimizerAttr) -> Option<AttrValue> {
+        // 获取求解器属性值
+        self.raw_params.get(&attr).cloned()
+    }
+    fn set_optimizer_attr(&mut self, attr: OptimizerAttr, value: AttrValue)
+            -> Result<(), MoiError> {
+        // 设置求解器属性值
+        // NOTE: 属性值名称以Gurobi为基准，针对不同求解器的实现可以按照名称转换
+        self.raw_params.insert(attr, value);
+        self.needs_update = true;
+        Ok(())
     }
 }

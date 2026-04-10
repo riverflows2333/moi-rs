@@ -311,6 +311,14 @@ impl ModelLike for GurobiOptimizer {
     fn set_model_attr(&mut self, attr: ModelAttr, value: AttrValue) -> Result<(), MoiError> {
         self.base.set_model_attr(attr, value)
     }
+
+    fn get_optimizer_attr(&self, attr: OptimizerAttr) -> Option<AttrValue> {
+        self.base.get_optimizer_attr(attr)
+    }
+
+    fn set_optimizer_attr(&mut self, attr: OptimizerAttr, value: AttrValue) -> Result<(), MoiError> {
+        self.base.set_optimizer_attr(attr, value)
+    }
 }
 
 impl Optimizer for GurobiOptimizer {

@@ -131,9 +131,9 @@ impl ModelLike for DummyModel {
     //     Ok(())
     // }
 
-    // fn get_optimizer_attr(&self, attr: OptimizerAttr) -> Option<AttrValue> {
-    //     self.optimizer_attrs.get(&attr).cloned()
-    // }
+    fn get_optimizer_attr(&self, attr: OptimizerAttr) -> Option<AttrValue> {
+        self.optimizer_attrs.get(&attr).cloned()
+    }
 
     // fn set_optimizer_attr(
     //     &mut self,
