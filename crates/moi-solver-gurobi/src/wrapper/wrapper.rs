@@ -8,21 +8,18 @@ use std::ffi::{CString, c_char, c_double, c_int, c_void};
 use std::ops::Index;
 use std::sync::Arc;
 
-#[derive(Debug, Clone)]
-pub struct GurobiOptimizer {
-    api: Arc<GurobiApi>,
-    env: *mut c_void,
-    model: *mut c_void,
-    base: BridgeOptimizer,
+#[derive(Debug)]
+pub struct GurobiEnv {
+    pub(crate) api: Arc<GurobiApi>,
+    pub(crate) env: *mut c_void,
 }
 
-unsafe impl Send for GurobiOptimizer {}
-unsafe impl Sync for GurobiOptimizer {}
+unsafe impl Send for GurobiEnv {}
+unsafe impl Sync for GurobiEnv {}
 
-impl GurobiOptimizer {
-    pub fn new(api: Arc<GurobiApi>, name: Option<&str>) -> Result<Self, String> {
+impl GurobiEnv {
+    pub fn new(api: Arc<GurobiApi>) -> Result<Self, String> {
         let mut env: *mut c_void = std::ptr::null_mut();
-        let mut model: *mut c_void = std::ptr::null_mut();
         unsafe {
             let ret = (api.GRBloadenv)(&mut env as *mut *mut c_void, std::ptr::null());
             if ret != 0 {
@@ -33,17 +30,48 @@ impl GurobiOptimizer {
             }
             let ret = (api.GRBstartenv)(env);
             if ret != 0 {
+                (api.GRBfreeenv)(env);
                 return Err(format!(
                     "Failed to start Gurobi environment: error code {}",
                     ret
                 ));
             }
+        }
+        Ok(Self { api, env })
+    }
+}
+
+impl Drop for GurobiEnv {
+    fn drop(&mut self) {
+        unsafe {
+            if !self.env.is_null() {
+                (self.api.GRBfreeenv)(self.env);
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct GurobiOptimizer {
+    api: Arc<GurobiApi>,
+    env: Arc<GurobiEnv>,
+    model: *mut c_void,
+    base: BridgeOptimizer,
+}
+
+unsafe impl Send for GurobiOptimizer {}
+unsafe impl Sync for GurobiOptimizer {}
+
+impl GurobiOptimizer {
+    pub fn new(env: Arc<GurobiEnv>, name: Option<&str>) -> Result<Self, String> {
+        let mut model: *mut c_void = std::ptr::null_mut();
+        unsafe {
             let cname = match name {
                 Some(n) => CString::new(n).unwrap(),
                 None => CString::new("model").unwrap(),
             };
-            let ret = (api.GRBnewmodel)(
-                env,
+            let ret = (env.api.GRBnewmodel)(
+                env.env,
                 &mut model as *mut *mut c_void,
                 cname.as_ptr(),
                 0,
@@ -53,9 +81,12 @@ impl GurobiOptimizer {
                 std::ptr::null(),
                 std::ptr::null(),
             );
+            if ret != 0 {
+                return Err(format!("Failed to create Gurobi model: error code {}", ret));
+            }
         }
         Ok(Self {
-            api,
+            api: env.api.clone(),
             env,
             model,
             base: BridgeOptimizer::new(),
@@ -316,7 +347,11 @@ impl ModelLike for GurobiOptimizer {
         self.base.get_optimizer_attr(attr)
     }
 
-    fn set_optimizer_attr(&mut self, attr: OptimizerAttr, value: AttrValue) -> Result<(), MoiError> {
+    fn set_optimizer_attr(
+        &mut self,
+        attr: OptimizerAttr,
+        value: AttrValue,
+    ) -> Result<(), MoiError> {
         self.base.set_optimizer_attr(attr, value)
     }
 }
@@ -344,9 +379,6 @@ impl Drop for GurobiOptimizer {
         unsafe {
             if !self.model.is_null() {
                 (self.api.GRBfreemodel)(self.model);
-            }
-            if !self.env.is_null() {
-                (self.api.GRBfreeenv)(self.env);
             }
         }
     }

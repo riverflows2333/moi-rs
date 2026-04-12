@@ -7,7 +7,9 @@ use std::sync::Arc;
 fn test_gurobi_solver_solve() {
     let gurobi_api =
         GurobiApi::new(find_library_from(&"/usr/local/gurobi1203".to_string()).unwrap()).unwrap();
-    let mut solver = GurobiOptimizer::new(Arc::new(gurobi_api), None).unwrap();
+    let api = Arc::new(gurobi_api);
+    let env = Arc::new(GurobiEnv::new(api).unwrap());
+    let mut solver = GurobiOptimizer::new(env, None).unwrap();
     let var_id1 = solver.add_variable(Some("x"), Some('B'), None, None);
     let var_id2 = solver.add_variable(Some("y"), Some('B'), None, None);
     let var_id3 = solver.add_variable(Some("z"), Some('B'), None, None);

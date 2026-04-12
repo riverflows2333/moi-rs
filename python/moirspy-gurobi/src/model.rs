@@ -32,7 +32,9 @@ impl Model {
         }
         let api =
             GurobiApi::new(PathBuf::from(loader_to_dll_path(&loader.clone()).unwrap())).unwrap();
-        let optimizer = GurobiOptimizer::new(Arc::new(api), name).unwrap();
+        let api_arc = Arc::new(api);
+        let env = Arc::new(GurobiEnv::new(api_arc).unwrap());
+        let optimizer = GurobiOptimizer::new(env, name).unwrap();
         Self { optimizer }
     }
     pub fn decode_and_update(&mut self, data: &[u8]) -> PyResult<String> {
