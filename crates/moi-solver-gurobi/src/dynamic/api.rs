@@ -13,6 +13,7 @@ pub struct GurobiApi {
         unsafe extern "C" fn(env: *mut *mut c_void, logfilename: *const c_char) -> c_int,
     pub GRBstartenv: unsafe extern "C" fn(env: *mut c_void) -> c_int,
     pub GRBfreeenv: unsafe extern "C" fn(env: *mut c_void),
+    pub GRBgetenv: unsafe extern "C" fn(model: *mut c_void) -> *mut c_void,
     // model functions
     pub GRBnewmodel: unsafe extern "C" fn(
         env: *mut c_void,
@@ -116,6 +117,45 @@ pub struct GurobiApi {
         attrname: *const c_char,
         newvalue: *const c_char,
     ) -> c_int,
+    // parameter functions
+    pub GRBgetdblparam: unsafe extern "C" fn(
+        env: *mut c_void,
+        paramname: *const c_char,
+        valueP: *mut c_double,
+    ) -> c_int,
+
+    pub GRBgetintparam: unsafe extern "C" fn(
+        env: *mut c_void,
+        paramname: *const c_char,
+        valueP: *mut c_int,
+    ) -> c_int,
+
+    pub GRBgetstrparam: unsafe extern "C" fn(
+        env: *mut c_void,
+        paramname: *const c_char,
+        valueP: *mut *mut c_char,
+    ) -> c_int,
+
+    pub GRBsetdblparam: unsafe extern "C" fn(
+        env: *mut c_void,
+        paramname: *const c_char,
+        newvalue: c_double,
+    ) -> c_int,
+
+    pub GRBsetintparam:
+        unsafe extern "C" fn(env: *mut c_void, paramname: *const c_char, newvalue: c_int) -> c_int,
+
+    pub GRBsetstrparam: unsafe extern "C" fn(
+        env: *mut c_void,
+        paramname: *const c_char,
+        newvalue: *const c_char,
+    ) -> c_int,
+
+    pub GRBsetparam: unsafe extern "C" fn(
+        env: *mut c_void,
+        paramname: *const c_char,
+        newvalue: *const c_char,
+    ) -> c_int,
 
     // optimize functions
     pub GRBoptimize: unsafe extern "C" fn(model: *mut c_void) -> c_int,
@@ -130,6 +170,7 @@ impl GurobiApi {
                 GRBstartenv: *lib.get(b"GRBstartenv")?,
                 GRBloadenv: *lib.get(b"GRBloadenv")?,
                 GRBfreeenv: *lib.get(b"GRBfreeenv")?,
+                GRBgetenv: *lib.get(b"GRBgetenv")?,
                 GRBnewmodel: *lib.get(b"GRBnewmodel")?,
                 GRBfreemodel: *lib.get(b"GRBfreemodel")?,
                 GRBaddvar: *lib.get(b"GRBaddvar")?,
@@ -144,6 +185,13 @@ impl GurobiApi {
                 GRBgetstrattr: *lib.get(b"GRBgetstrattr")?,
                 GRBsetstrattr: *lib.get(b"GRBsetstrattr")?,
                 GRBoptimize: *lib.get(b"GRBoptimize")?,
+                GRBgetdblparam: *lib.get(b"GRBgetdblparam")?,
+                GRBgetintparam: *lib.get(b"GRBgetintparam")?,
+                GRBgetstrparam: *lib.get(b"GRBgetstrparam")?,
+                GRBsetdblparam: *lib.get(b"GRBsetdblparam")?,
+                GRBsetintparam: *lib.get(b"GRBsetintparam")?,
+                GRBsetstrparam: *lib.get(b"GRBsetstrparam")?,
+                GRBsetparam: *lib.get(b"GRBsetparam")?,
                 _lib: lib,
             })
         }
