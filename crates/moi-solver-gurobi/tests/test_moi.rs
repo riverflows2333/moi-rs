@@ -48,6 +48,9 @@ fn test_gurobi_solver_solve() {
     solver
         .set_model_attr(ModelAttr::ObjectiveFunction, AttrValue::ScalarFn(f))
         .unwrap();
+    // solver.set_optimizer_attr(OptimizerAttr::TimeLimit, AttrValue::Float(100.0)).unwrap();
+    // solver.set_optimizer_attr(OptimizerAttr::Silent, AttrValue::Bool(false)).unwrap();
+    solver.set_optimizer_attr(OptimizerAttr::Raw("OutputFlag".to_string()), AttrValue::Int(0)).unwrap();
     solver.update(None).unwrap();
     let status = solver.optimize().unwrap();
     assert_eq!(status, SolveStatus::Optimal);

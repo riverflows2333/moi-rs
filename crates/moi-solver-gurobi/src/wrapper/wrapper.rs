@@ -54,7 +54,6 @@ impl Drop for GurobiEnv {
 #[derive(Debug, Clone)]
 pub struct GurobiOptimizer {
     api: Arc<GurobiApi>,
-    env: Arc<GurobiEnv>,
     model: *mut c_void,
     base: BridgeOptimizer,
 }
@@ -87,7 +86,6 @@ impl GurobiOptimizer {
         }
         Ok(Self {
             api: env.api.clone(),
-            env,
             model,
             base: BridgeOptimizer::new(),
         })
@@ -207,6 +205,74 @@ impl GurobiOptimizer {
                 return Err(format!("Failed to add constraints: error code {}", ret));
             }
         }
+        // 添加属性（参数设置）
+        unsafe {
+            let mod_env = (self.api.GRBgetenv)(self.model);
+            for (attr, value) in &self.base.raw_params {
+                match attr {
+                    OptimizerAttr::TimeLimit => {
+                        if let AttrValue::Float(v) = value {
+                            let ret = (self.api.GRBsetdblparam)(
+                                mod_env,
+                                GRB_DBL_PAR_TIMELIMIT.as_ptr() as *const c_char,
+                                *v,
+                            );
+                            if ret != 0 {
+                                return Err(format!("Failed to set TimeLimit: error code {}", ret));
+                            }
+                        }
+                    }
+                    OptimizerAttr::Silent => {
+                        if let AttrValue::Bool(v) = value {
+                            let ret = (self.api.GRBsetintparam)(
+                                mod_env,
+                                GRB_INT_PAR_OUTPUTFLAG.as_ptr() as *const c_char,
+                                if *v { 1 } else { 0 },
+                            );
+                            if ret != 0 {
+                                return Err(format!("Failed to set Silent: error code {}", ret));
+                            }
+                        } else if let AttrValue::Int(v) = value {
+                            let ret = (self.api.GRBsetintparam)(
+                                mod_env,
+                                GRB_INT_PAR_OUTPUTFLAG.as_ptr() as *const c_char,
+                                *v as c_int,
+                            );
+                            if ret != 0 {
+                                return Err(format!("Failed to set Silent: error code {}", ret));
+                            }
+                        }
+                    }
+                    OptimizerAttr::Raw(s) => {
+                        let c_s = CString::new(s.clone()).unwrap();
+                        let str_val = match value {
+                            AttrValue::Float(v) => v.to_string(),
+                            AttrValue::Int(v) => v.to_string(),
+                            AttrValue::String(st) => st.clone(),
+                            AttrValue::Bool(v) => {
+                                if *v {
+                                    "1".to_string()
+                                } else {
+                                    "0".to_string()
+                                }
+                            }
+                            _ => continue,
+                        };
+                        let c_val = CString::new(str_val).unwrap();
+                        let ret = (self.api.GRBsetparam)(
+                            mod_env,
+                            c_s.as_ptr() as *const c_char,
+                            c_val.as_ptr() as *const c_char,
+                        );
+                        if ret != 0 {
+                            return Err(format!("Failed to set {}: error code {}", s, ret));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
         self.base.needs_update = false;
         Ok(())
     }

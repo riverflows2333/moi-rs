@@ -179,6 +179,34 @@ impl Model {
         );
         Ok(())
     }
+
+    #[pyo3(name = "setParam")]
+    fn set_param(&mut self, paramname: &str, newvalue: &Bound<'_, PyAny>) -> PyResult<()> {
+        let attr = OptimizerAttr::Raw(paramname.to_string());
+        let val = if let Ok(v) = newvalue.extract::<i64>() {
+            AttrValue::Int(v)
+        } else if let Ok(v) = newvalue.extract::<f64>() {
+            AttrValue::Float(v)
+        } else if let Ok(v) = newvalue.extract::<String>() {
+            AttrValue::String(v)
+        } else if let Ok(v) = newvalue.extract::<bool>() {
+            AttrValue::Bool(v)
+        } else {
+            return Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(
+                "Unsupported attribute value type".to_string(),
+            ));
+        };
+
+        let mut model = self.model.write().unwrap();
+        model.set_optimizer_attr(attr, val).map_err(|e| {
+            PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+                "Failed to set optimizer attr: {:?}",
+                e
+            ))
+        })?;
+        Ok(())
+    }
+
     // 选择求解器后端
     #[pyo3(name = "setBackend")]
     fn set_backend(&mut self, py: Python, backend: &str) {
@@ -207,10 +235,7 @@ impl Model {
                     .get_item("status")?
                     .unwrap()
                     .extract::<String>()?;
-                let obj_val: f64 = result_dict
-                    .get_item("objval")?
-                    .unwrap()
-                    .extract::<f64>()?;
+                let obj_val: f64 = result_dict.get_item("objval")?.unwrap().extract::<f64>()?;
                 let x_values: Vec<f64> = result_dict
                     .get_item("x_values")?
                     .unwrap()
