@@ -39,22 +39,14 @@ fn test_gurobi_solver_solve() {
         afn.push_term(var_id3, 2.0);
         afn.simplify();
     }
-    solver
-        .set_model_attr(
-            ModelAttr::ObjectiveSense,
-            AttrValue::ModelSense(ModelSense::Maximize),
-        )
-        .unwrap();
-    solver
-        .set_model_attr(ModelAttr::ObjectiveFunction, AttrValue::ScalarFn(f))
-        .unwrap();
+    solver.set_objective(f, ModelSense::Maximize).unwrap();
     // solver.set_optimizer_attr(OptimizerAttr::TimeLimit, AttrValue::Float(100.0)).unwrap();
     // solver.set_optimizer_attr(OptimizerAttr::Silent, AttrValue::Bool(false)).unwrap();
     solver.set_optimizer_attr(OptimizerAttr::Raw("OutputFlag".to_string()), AttrValue::Int(0)).unwrap();
-    solver.update(None).unwrap();
+    solver.update().unwrap();
     let status = solver.optimize().unwrap();
     assert_eq!(status, SolveStatus::Optimal);
-    assert_eq!(solver[var_id1].value, Some(1.0));
-    assert_eq!(solver[var_id2].value, Some(0.0));
-    assert_eq!(solver[var_id3].value, Some(1.0));
+    assert_eq!(solver.get_var_value(var_id1), Some(1.0));
+    assert_eq!(solver.get_var_value(var_id2), Some(0.0));
+    assert_eq!(solver.get_var_value(var_id3), Some(1.0));
 }

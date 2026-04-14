@@ -1,11 +1,10 @@
 use crate::bindings::*;
 use crate::dynamic::api::GurobiApi;
 use crate::wrapper::utils::*;
-use moi_bridge::BridgeOptimizer;
 use moi_core::*;
 use moi_solver_api::*;
+use std::f64::INFINITY;
 use std::ffi::{CString, c_char, c_double, c_int, c_void};
-use std::ops::Index;
 use std::sync::Arc;
 
 #[derive(Debug)]
@@ -51,11 +50,12 @@ impl Drop for GurobiEnv {
     }
 }
 
-#[derive(Debug, Clone)]
 pub struct GurobiOptimizer {
     api: Arc<GurobiApi>,
     model: *mut c_void,
-    base: BridgeOptimizer,
+    // 追踪变量和约束数量
+    num_vars: usize,
+    num_constrs: usize,
 }
 
 unsafe impl Send for GurobiOptimizer {}
@@ -87,260 +87,9 @@ impl GurobiOptimizer {
         Ok(Self {
             api: env.api.clone(),
             model,
-            base: BridgeOptimizer::new(),
+            num_vars: 0,
+            num_constrs: 0,
         })
-    }
-
-    pub fn set_objective(&mut self, f: ScalarFunctionType, sense: ModelSense) {
-        self.base.obj = Some(f);
-        self.base.sense = Some(sense);
-        self.base.needs_update = true;
-    }
-
-    pub fn update(&mut self, model: Option<BridgeOptimizer>) -> Result<(), String> {
-        let mut ret;
-        if let Some(m) = model {
-            self.base = m;
-        }
-        if !self.base.needs_update {
-            return Ok(());
-        }
-        // 更新变量
-        let numvars = self.base.vars.len() as c_int;
-        let lb = self.base.vars.iter().map(|v| v.lb).collect::<Vec<f64>>();
-        let ub = self.base.vars.iter().map(|v| v.ub).collect::<Vec<f64>>();
-        let vtype = self
-            .base
-            .vars
-            .iter()
-            .map(|v| v.vtype as c_char)
-            .collect::<Vec<c_char>>();
-        let (varid, coeff, _) = match &self.base.obj {
-            Some(f) => scalar_function_to_grb(f)?,
-            None => (Vec::new(), Vec::new(), 0.0),
-        };
-        // 这里需要注意，如果变量在目标函数中没有出现，需要补0
-        let mut obj = vec![0.0; numvars as usize];
-        for (v, c) in varid.iter().zip(coeff.iter()) {
-            obj[v.0] = *c;
-        }
-        let varnames = self
-            .base
-            .vars
-            .iter()
-            .map(|v| CString::new(v.name.clone()).unwrap())
-            .collect::<Vec<CString>>();
-        let varnames_ptrs = varnames
-            .iter()
-            .map(|s| s.as_ptr() as *const c_char)
-            .collect::<Vec<*const c_char>>();
-        unsafe {
-            ret = (self.api.GRBaddvars)(
-                self.model,
-                numvars,
-                0,
-                std::ptr::null(),
-                std::ptr::null(),
-                std::ptr::null(),
-                obj.as_ptr() as *const c_double,
-                lb.as_ptr(),
-                ub.as_ptr(),
-                vtype.as_ptr(),
-                varnames_ptrs.as_ptr(),
-            );
-            if ret != 0 {
-                return Err(format!("Failed to add variables: error code {}", ret));
-            }
-        }
-        // 目标函数方向
-        if let Some(s) = self.base.sense {
-            let s = match s {
-                ModelSense::Minimize => GRB_MINIMIZE,
-                ModelSense::Maximize => GRB_MAXIMIZE,
-            };
-            unsafe {
-                ret = (self.api.GRBsetintattr)(
-                    self.model,
-                    GRB_INT_ATTR_MODELSENSE.as_ptr() as *const c_char,
-                    s,
-                );
-                if ret != 0 {
-                    return Err(format!("Failed to set objective sense: error code {}", ret));
-                }
-            }
-        }
-
-        // 更新约束
-        let (cbeg, cind, cval, sense, rhs, names) = build_constr_matrix(
-            &self
-                .base
-                .constrs
-                .values()
-                .cloned()
-                .collect::<Vec<ConstrInfo>>(),
-        )?;
-        let numconstrs = self.base.constrs.len() as c_int;
-        let numnz = cind.len() as c_int;
-        let cnames = names
-            .iter()
-            .map(|n| CString::new(n.clone()).unwrap())
-            .collect::<Vec<CString>>();
-        let cnames_ptrs = cnames
-            .iter()
-            .map(|s| s.as_ptr() as *const c_char)
-            .collect::<Vec<*const c_char>>();
-        unsafe {
-            ret = (self.api.GRBaddconstrs)(
-                self.model,
-                numconstrs,
-                numnz,
-                cbeg.as_ptr() as *const c_int,
-                cind.as_ptr() as *const c_int,
-                cval.as_ptr() as *const c_double,
-                sense.as_ptr() as *const c_char,
-                rhs.as_ptr() as *const c_double,
-                cnames_ptrs.as_ptr() as *const *const c_char,
-            );
-            if ret != 0 {
-                return Err(format!("Failed to add constraints: error code {}", ret));
-            }
-        }
-        // 添加属性（参数设置）
-        unsafe {
-            let mod_env = (self.api.GRBgetenv)(self.model);
-            for (attr, value) in &self.base.raw_params {
-                match attr {
-                    OptimizerAttr::TimeLimit => {
-                        if let AttrValue::Float(v) = value {
-                            let ret = (self.api.GRBsetdblparam)(
-                                mod_env,
-                                GRB_DBL_PAR_TIMELIMIT.as_ptr() as *const c_char,
-                                *v,
-                            );
-                            if ret != 0 {
-                                return Err(format!("Failed to set TimeLimit: error code {}", ret));
-                            }
-                        }
-                    }
-                    OptimizerAttr::Silent => {
-                        if let AttrValue::Bool(v) = value {
-                            let ret = (self.api.GRBsetintparam)(
-                                mod_env,
-                                GRB_INT_PAR_OUTPUTFLAG.as_ptr() as *const c_char,
-                                if *v { 1 } else { 0 },
-                            );
-                            if ret != 0 {
-                                return Err(format!("Failed to set Silent: error code {}", ret));
-                            }
-                        } else if let AttrValue::Int(v) = value {
-                            let ret = (self.api.GRBsetintparam)(
-                                mod_env,
-                                GRB_INT_PAR_OUTPUTFLAG.as_ptr() as *const c_char,
-                                *v as c_int,
-                            );
-                            if ret != 0 {
-                                return Err(format!("Failed to set Silent: error code {}", ret));
-                            }
-                        }
-                    }
-                    OptimizerAttr::Raw(s) => {
-                        let c_s = CString::new(s.clone()).unwrap();
-                        let str_val = match value {
-                            AttrValue::Float(v) => v.to_string(),
-                            AttrValue::Int(v) => v.to_string(),
-                            AttrValue::String(st) => st.clone(),
-                            AttrValue::Bool(v) => {
-                                if *v {
-                                    "1".to_string()
-                                } else {
-                                    "0".to_string()
-                                }
-                            }
-                            _ => continue,
-                        };
-                        let c_val = CString::new(str_val).unwrap();
-                        let ret = (self.api.GRBsetparam)(
-                            mod_env,
-                            c_s.as_ptr() as *const c_char,
-                            c_val.as_ptr() as *const c_char,
-                        );
-                        if ret != 0 {
-                            return Err(format!("Failed to set {}: error code {}", s, ret));
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
-
-        self.base.needs_update = false;
-        Ok(())
-    }
-    pub fn get_var_value(&self, var_id: VarId) -> Option<f64> {
-        self.base.get_value_by_var_id(var_id)
-    }
-    pub fn return_results(&mut self) -> Result<SolveStatus, MoiError> {
-        if let Some(AttrValue::Status(status)) = self.get_model_attr(ModelAttr::TerminationStatus) {
-            let mut x = vec![0.0; self.base.vars.len()];
-            let mut objval: f64 = 0.0;
-            unsafe {
-                // 获取求解结果
-                let ret = (self.api.GRBgetdblattrarray)(
-                    self.model,
-                    GRB_DBL_ATTR_X.as_ptr() as *const c_char,
-                    0,
-                    self.base.vars.len() as c_int,
-                    x.as_mut_ptr(),
-                );
-                if ret != 0 {
-                    return Err(MoiError::Msg(format!(
-                        "Failed to get variable values: error code {}",
-                        ret
-                    )));
-                }
-                // 获取目标函数值
-                let ret = (self.api.GRBgetdblattr)(
-                    self.model,
-                    GRB_DBL_ATTR_OBJVAL.as_ptr() as *const c_char,
-                    &mut objval as *mut c_double,
-                );
-                if ret != 0 {
-                    return Err(MoiError::Msg(format!(
-                        "Failed to get objective value: error code {}",
-                        ret
-                    )));
-                }
-            }
-            // 更新变量值
-            for (i, val) in x.iter().enumerate() {
-                self.base.vars[i].value = Some(*val);
-            }
-            // 目标函数值
-            self.base.objval = Some(objval);
-            Ok(status)
-        } else {
-            Err(MoiError::Msg(
-                "Failed to retrieve termination status".into(),
-            ))
-        }
-    }
-
-    pub fn get_results(&self) -> (String, Option<f64>, Option<Vec<f64>>) {
-        // 返回求解状态、目标函数值、变量值
-        if let Some(AttrValue::Status(_)) = self.get_model_attr(ModelAttr::TerminationStatus) {
-            let objval = self.base.objval;
-            let varvals = self.base.vars.iter().map(|v| v.value.unwrap()).collect();
-            ("Optimal".to_string(), objval, Some(varvals))
-        } else {
-            ("Unknown".to_string(), None, None)
-        }
-    }
-}
-
-impl Index<VarId> for GurobiOptimizer {
-    type Output = VarInfo;
-    fn index(&self, index: VarId) -> &Self::Output {
-        &self.base.vars[index.0]
     }
 }
 
@@ -352,8 +101,16 @@ impl ModelLike for GurobiOptimizer {
         lb: Option<f64>,
         ub: Option<f64>,
     ) -> VarId {
-        self.base.add_variable(name, vtype, lb, ub)
+        let vars = self.add_variables(
+            1,
+            name.map(|s| NameType::Single(s.to_string())),
+            vtype.map(|v| vec![v]),
+            lb.map(|v| BoundType::Single(v)),
+            ub.map(|v| BoundType::Single(v)),
+        );
+        vars[0]
     }
+
     fn add_variables(
         &mut self,
         n: usize,
@@ -362,24 +119,168 @@ impl ModelLike for GurobiOptimizer {
         lb: Option<BoundType>,
         ub: Option<BoundType>,
     ) -> Vec<VarId> {
-        self.base.add_variables(n, name, vtype, lb, ub)
+        let mut vids = Vec::with_capacity(n);
+        let start_idx = self.num_vars;
+
+        let lbs = match lb {
+            Some(BoundType::Single(v)) => vec![v; n],
+            Some(BoundType::Vector(v)) => v,
+            None => vec![0.0; n],
+        };
+        let ubs = match ub {
+            Some(BoundType::Single(v)) => vec![v; n],
+            Some(BoundType::Vector(v)) => v,
+            None => vec![INFINITY; n], // Gurobi infinity
+        };
+        let vtypes = match vtype {
+            Some(v) => v.into_iter().map(|c| c as c_char).collect(),
+            None => vec!['C' as c_char; n],
+        };
+
+        let cnames: Vec<CString> = match name {
+            Some(NameType::Single(s)) => (0..n)
+                .map(|i| CString::new(format!("{}_{}", s, i)).unwrap())
+                .collect(),
+            Some(NameType::Vector(v)) => v.into_iter().map(|s| CString::new(s).unwrap()).collect(),
+            None => (0..n)
+                .map(|i| CString::new(format!("x{}", start_idx + i)).unwrap())
+                .collect(),
+        };
+        let cname_ptrs: Vec<*const c_char> = cnames.iter().map(|s| s.as_ptr()).collect();
+
+        unsafe {
+            (self.api.GRBaddvars)(
+                self.model,
+                n as c_int,
+                0,
+                std::ptr::null(),
+                std::ptr::null(),
+                std::ptr::null(),
+                std::ptr::null(), // obj coefficients set via set_objective
+                lbs.as_ptr(),
+                ubs.as_ptr(),
+                vtypes.as_ptr(),
+                cname_ptrs.as_ptr(),
+            );
+        }
+
+        for i in 0..n {
+            vids.push(VarId(start_idx + i));
+        }
+        self.num_vars += n;
+        vids
     }
+
     fn add_constraint(
         &mut self,
         f: ScalarFunctionType,
         s: ScalarSetType,
         name: Option<String>,
     ) -> ConstrId {
-        self.base.add_constraint(f, s, name)
+        let ids = self.add_constraints(vec![f], vec![s], name.map(|n| vec![n]));
+        ids[0]
     }
+
     fn add_constraints(
         &mut self,
         fs: Vec<ScalarFunctionType>,
         ss: Vec<ScalarSetType>,
         names: Option<Vec<String>>,
     ) -> Vec<ConstrId> {
-        self.base.add_constraints(fs, ss, names)
+        let n = fs.len();
+        let mut ids = Vec::with_capacity(n);
+        let start_idx = self.num_constrs;
+
+        for (i, (f, s)) in fs.into_iter().zip(ss.into_iter()).enumerate() {
+            let info = ConstrInfo {
+                row_index: start_idx + i,
+                name: names
+                    .as_ref()
+                    .map(|ns| ns[i].clone())
+                    .unwrap_or_else(|| format!("c{}", start_idx + i)),
+                f,
+                s,
+            };
+
+            if let Ok((vars, coeffs, sense, rhs)) = scalar_constraint_to_grb(&info) {
+                let cname = CString::new(info.name).unwrap();
+                unsafe {
+                    (self.api.GRBaddconstr)(
+                        self.model,
+                        vars.len() as c_int,
+                        vars.iter()
+                            .map(|v| v.0 as c_int)
+                            .collect::<Vec<_>>()
+                            .as_ptr(),
+                        coeffs.as_ptr(),
+                        sense as c_char,
+                        rhs,
+                        cname.as_ptr(),
+                    );
+                }
+            }
+            ids.push(ConstrId(start_idx + i));
+        }
+
+        self.num_constrs += n;
+        ids
     }
+
+    fn set_objective(&mut self, f: ScalarFunctionType, sense: ModelSense) -> Result<(), MoiError> {
+        let (vars, coeffs, constant) = scalar_function_to_grb(&f).map_err(|e| MoiError::Msg(e))?;
+
+        unsafe {
+            // 首先将所有已有变量的目标系数清零
+            let zeros = vec![0.0; self.num_vars];
+            (self.api.GRBsetdblattrarray)(
+                self.model,
+                GRB_DBL_ATTR_OBJ.as_ptr() as *const c_char,
+                0,
+                self.num_vars as c_int,
+                zeros.as_ptr() as *mut c_double,
+            );
+
+            // 设置新的目标系数
+            for (v, c) in vars.iter().zip(coeffs.iter()) {
+                (self.api.GRBsetdblattrelement)(
+                    self.model,
+                    GRB_DBL_ATTR_OBJ.as_ptr() as *const c_char,
+                    v.0 as c_int,
+                    *c,
+                );
+            }
+
+            // 设置常数偏置
+            (self.api.GRBsetdblattr)(
+                self.model,
+                GRB_DBL_ATTR_OBJCON.as_ptr() as *const c_char,
+                constant,
+            );
+
+            // 设置优化方向
+            let grb_sense = match sense {
+                ModelSense::Minimize => GRB_MINIMIZE,
+                ModelSense::Maximize => GRB_MAXIMIZE,
+            };
+            (self.api.GRBsetintattr)(
+                self.model,
+                GRB_INT_ATTR_MODELSENSE.as_ptr() as *const c_char,
+                grb_sense,
+            );
+        }
+        Ok(())
+    }
+
+    fn update(&mut self) -> Result<(), MoiError> {
+        unsafe {
+            let ret = (self.api.GRBupdatemodel)(self.model);
+            if ret != 0 {
+                return Err(MoiError::Msg(format!("Failed to update model: {}", ret)));
+            }
+        }
+        Ok(())
+    }
+
     fn get_model_attr(&self, attr: ModelAttr) -> Option<AttrValue> {
         match attr {
             ModelAttr::TerminationStatus => {
@@ -402,15 +303,16 @@ impl ModelLike for GurobiOptimizer {
                     }))
                 }
             }
-            _ => self.base.get_model_attr(attr),
+            _ => None,
         }
     }
-    fn set_model_attr(&mut self, attr: ModelAttr, value: AttrValue) -> Result<(), MoiError> {
-        self.base.set_model_attr(attr, value)
+
+    fn set_model_attr(&mut self, _attr: ModelAttr, _value: AttrValue) -> Result<(), MoiError> {
+        Ok(())
     }
 
-    fn get_optimizer_attr(&self, attr: OptimizerAttr) -> Option<AttrValue> {
-        self.base.get_optimizer_attr(attr)
+    fn get_optimizer_attr(&self, _attr: OptimizerAttr) -> Option<AttrValue> {
+        None
     }
 
     fn set_optimizer_attr(
@@ -418,7 +320,59 @@ impl ModelLike for GurobiOptimizer {
         attr: OptimizerAttr,
         value: AttrValue,
     ) -> Result<(), MoiError> {
-        self.base.set_optimizer_attr(attr, value)
+        unsafe {
+            let mod_env = (self.api.GRBgetenv)(self.model);
+            match attr {
+                OptimizerAttr::TimeLimit => {
+                    if let AttrValue::Float(v) = value {
+                        (self.api.GRBsetdblparam)(
+                            mod_env,
+                            GRB_DBL_PAR_TIMELIMIT.as_ptr() as *const c_char,
+                            v,
+                        );
+                    }
+                }
+                OptimizerAttr::Silent => {
+                    let flag = match value {
+                        AttrValue::Bool(v) => {
+                            if v {
+                                0
+                            } else {
+                                1
+                            }
+                        }
+                        AttrValue::Int(v) => {
+                            if v == 0 {
+                                1
+                            } else {
+                                0
+                            }
+                        }
+                        _ => 1,
+                    };
+                    (self.api.GRBsetintparam)(
+                        mod_env,
+                        GRB_INT_PAR_OUTPUTFLAG.as_ptr() as *const c_char,
+                        flag,
+                    );
+                }
+                OptimizerAttr::Raw(s) => {
+                    if let AttrValue::Float(v) = value {
+                        (self.api.GRBsetdblparam)(mod_env, s.as_ptr() as *const c_char, v);
+                    } else if let AttrValue::Int(v) = value {
+                        (self.api.GRBsetintparam)(mod_env, s.as_ptr() as *const c_char, v as c_int);
+                    } else if let AttrValue::String(ref v) = value {
+                        (self.api.GRBsetstrparam)(
+                            mod_env,
+                            s.as_ptr() as *const c_char,
+                            v.as_ptr() as *const c_char,
+                        );
+                    }
+                }
+                _ => {}
+            }
+        }
+        Ok(())
     }
 }
 
@@ -428,15 +382,55 @@ impl Optimizer for GurobiOptimizer {
             let ret = (self.api.GRBoptimize)(self.model);
             if ret != 0 {
                 return Err(MoiError::Msg(format!(
-                    "Failed to optimize Gurobi model: error code {}",
+                    "Gurobi optimization failed: {}",
                     ret
                 )));
             }
         }
-        self.return_results()
+        self.get_model_attr(ModelAttr::TerminationStatus)
+            .and_then(|v| {
+                if let AttrValue::Status(s) = v {
+                    Some(s)
+                } else {
+                    None
+                }
+            })
+            .ok_or(MoiError::Msg("Failed to get status".into()))
     }
+
     fn compute_conflict(&mut self) -> Result<(), MoiError> {
         unimplemented!()
+    }
+
+    fn get_var_value(&self, var_id: VarId) -> Option<f64> {
+        let mut val: f64 = 0.0;
+        unsafe {
+            let ret = (self.api.GRBgetdblattrelement)(
+                self.model,
+                GRB_DBL_ATTR_X.as_ptr() as *const c_char,
+                var_id.0 as c_int,
+                &mut val as *mut c_double,
+            );
+            if ret != 0 {
+                return None;
+            }
+        }
+        Some(val)
+    }
+
+    fn get_objective_value(&self) -> Option<f64> {
+        let mut val: f64 = 0.0;
+        unsafe {
+            let ret = (self.api.GRBgetdblattr)(
+                self.model,
+                GRB_DBL_ATTR_OBJVAL.as_ptr() as *const c_char,
+                &mut val as *mut c_double,
+            );
+            if ret != 0 {
+                return None;
+            }
+        }
+        Some(val)
     }
 }
 

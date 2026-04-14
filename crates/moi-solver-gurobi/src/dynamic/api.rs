@@ -76,6 +76,31 @@ pub struct GurobiApi {
         rhs: *const c_double,
         constrnames: *const *const c_char,
     ) -> c_int,
+    // update function
+    pub GRBupdatemodel: unsafe extern "C" fn(model: *mut c_void) -> c_int,
+
+    pub GRBgetdblattrelement: unsafe extern "C" fn(
+        model: *mut c_void,
+        attrname: *const c_char,
+        element: c_int,
+        valueP: *mut c_double,
+    ) -> c_int,
+
+    pub GRBsetdblattrelement: unsafe extern "C" fn(
+        model: *mut c_void,
+        attrname: *const c_char,
+        element: c_int,
+        newvalue: c_double,
+    ) -> c_int,
+
+    pub GRBsetdblattrarray: unsafe extern "C" fn(
+        model: *mut c_void,
+        attrname: *const c_char,
+        first: c_int,
+        len: c_int,
+        newvalues: *const c_double,
+    ) -> c_int,
+
     // attr functions
     pub GRBgetintattr: unsafe extern "C" fn(
         model: *mut c_void,
@@ -192,6 +217,10 @@ impl GurobiApi {
                 GRBsetintparam: *lib.get(b"GRBsetintparam")?,
                 GRBsetstrparam: *lib.get(b"GRBsetstrparam")?,
                 GRBsetparam: *lib.get(b"GRBsetparam")?,
+                GRBupdatemodel: *lib.get(b"GRBupdatemodel")?,
+                GRBgetdblattrelement: *lib.get(b"GRBgetdblattrelement")?,
+                GRBsetdblattrelement: *lib.get(b"GRBsetdblattrelement")?,
+                GRBsetdblattrarray: *lib.get(b"GRBsetdblattrarray")?,
                 _lib: lib,
             })
         }

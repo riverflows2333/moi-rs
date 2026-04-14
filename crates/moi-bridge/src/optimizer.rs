@@ -169,7 +169,19 @@ impl ModelLike for BridgeOptimizer {
             .collect()
     }
 
-    fn get_model_attr(&self, attr: ModelAttr) -> Option<AttrValue> {
+    
+    fn set_objective(&mut self, f: ScalarFunctionType, sense: ModelSense) -> Result<(), MoiError> {
+        self.obj = Some(f);
+        self.sense = Some(sense);
+        self.needs_update = true;
+        Ok(())
+    }
+
+    fn update(&mut self) -> Result<(), MoiError> {
+        Ok(())
+    }
+
+fn get_model_attr(&self, attr: ModelAttr) -> Option<AttrValue> {
         match attr {
             ModelAttr::ObjectiveSense => self.sense.map(AttrValue::ModelSense),
             ModelAttr::ObjectiveFunction => self.obj.clone().map(AttrValue::ScalarFn),
