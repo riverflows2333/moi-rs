@@ -16,3 +16,4 @@ bincode = "2.0.1"
 moi-solver-gurobi.workspace = true
 moi-bridge.workspace = true
 moi-solver-api.workspace = true
+moi-core.workspace = true
