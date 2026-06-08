@@ -6,7 +6,7 @@ use std::ptr::{null, null_mut};
 
 #[test]
 fn test_api_mip() {
-    let api = GurobiApi::new(PathBuf::from("/usr/local/gurobi1203/lib/libgurobi120.so")).unwrap();
+    let api = GurobiApi::new(PathBuf::from("/opt/gurobi1203/lib/libgurobi120.so")).unwrap();
     unsafe {
         let mut ret = 0;
         // 创建环境

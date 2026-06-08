@@ -19,7 +19,7 @@ pub struct BridgeOptimizer {
     pub obj: Option<ScalarFunctionType>,
     pub sense: Option<ModelSense>,
     pub status: BridgeState,
-    pub backend: Option<Box<dyn Optimizer>>,
+    pub backend: Option<Box<dyn Optimizer + Send + Sync>>,
     pub raw_params: HashMap<OptimizerAttr, AttrValue>,
 }
 
@@ -37,7 +37,7 @@ impl BridgeOptimizer {
     }
 
     /// 关联后端求解器并执行“大冲刷”（一次性同步所有本地缓存的状态）
-    pub fn attach_backend(&mut self, mut backend: Box<dyn Optimizer>) -> Result<(), MoiError> {
+    pub fn attach_backend(&mut self, mut backend: Box<dyn Optimizer + Send + Sync>) -> Result<(), MoiError> {
         // 1. 同步变量
         if !self.vars.is_empty() {
             let n = self.vars.len();

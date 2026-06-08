@@ -1,8 +1,9 @@
+use moi_core::AttrValue;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList, PyString, PyTuple};
 use moi_bridge::BridgeOptimizer;
 use std::sync::{Arc, RwLock};
-
+use pyo3::conversion::*;
 pub type SharedBridge = Arc<RwLock<BridgeOptimizer>>;
 #[derive(Clone, Debug)]
 pub enum Param<T> {

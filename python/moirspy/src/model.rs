@@ -3,7 +3,6 @@ use crate::expr::LinExpr;
 use crate::moi::*;
 use crate::utils::*;
 use crate::var::*;
-use bincode::config;
 use moi_bridge::BridgeOptimizer;
 use moi_core::*;
 use moi_solver_api::*;
@@ -11,7 +10,6 @@ use pyo3::prelude::*;
 use pyo3::types::{PyAny, PyDict, PyTuple};
 use std::sync::{Arc, RwLock};
 #[pyclass]
-#[derive(Debug)]
 pub struct Model {
     name: String,
     model: SharedBridge,
@@ -210,57 +208,30 @@ impl Model {
     // 选择求解器后端
     #[pyo3(name = "setBackend")]
     fn set_backend(&mut self, py: Python, backend: &str) {
-        // 通过Python attach搜索库中包含的moirspy-后端名称的模块，并调用其Model类创建对象；
         let model_instance = py.import(&format!("moirspy_{}", backend))
             .and_then(|module| module.getattr("Model"))
-            .and_then(|model_class| model_class.call0())
+            .and_then(|model_class| model_class.call1((Some(self.name.to_string()), None::<String>)))
             .expect(&format!("Failed to set backend to '{}'. Please ensure the corresponding module is available.", backend));
-        // 将BridgeOptimizer进行编码，在后端Model当中进行解码并更新模型；
-        let encoded_model = self.encode().expect("Failed to encode model");
-        model_instance
-            .call_method1("decode_and_update", (encoded_model,))
-            .expect("Failed to update model in backend");
-        // 将后端Model的实例保存到当前Model的backend属性当中，以便后续调用求解等接口时使用
+
+        use crate::py_backend::PyBackend;
+        let py_backend = Box::new(PyBackend::new(model_instance.clone().into()));
+
+        let mut bridge = self.model.write().unwrap();
+        bridge
+            .attach_backend(py_backend)
+            .expect("Failed to sync bridge optimizer to Python backend");
+
         self.backend = Some(model_instance.into());
     }
     // 调用底层求解器进行优化
-    fn optimize(&mut self, py: Python) -> PyResult<()> {
-        if let Some(ref backend) = self.backend {
-            let result_obj = backend
-                .call_method0(py, "optimize")
-                .expect("Failed to call optimize on backend");
-            if let Ok(result_dict) = result_obj.cast_bound::<PyDict>(py) {
-                // 2. 解析返回的载荷
-                let _: String = result_dict
-                    .get_item("status")?
-                    .unwrap()
-                    .extract::<String>()?;
-                let obj_val: f64 = result_dict.get_item("objval")?.unwrap().extract::<f64>()?;
-                let x_values: Vec<f64> = result_dict
-                    .get_item("x_values")?
-                    .unwrap()
-                    .extract::<Vec<f64>>()?;
-
-                // 3. 核心：获取写锁，更新 moipy 自己的 BridgeOptimizer
-                let mut bridge = self.model.write().unwrap(); // 这里的 bridge 是 SharedBridge
-                bridge.objval = Some(obj_val);
-                // 将结果回填到各个变量的 VarInfo 中
-                for (i, &val) in x_values.iter().enumerate() {
-                    bridge.vars.get_mut(i).map(|var_info| {
-                        var_info.value = Some(val);
-                    });
-                }
-                // dbg!(&bridge.vars.iter().map(|v| v.value).collect::<Vec<_>>());
-            } else {
-                return Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
-                    "Backend optimize() did not return a dictionary with results.",
-                ));
-            }
-            Ok(())
-        } else {
-            Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
-                "No backend set. Please call setBackend() before optimizing.",
-            ))
+    fn optimize(&mut self, _py: Python) -> PyResult<()> {
+        let mut bridge = self.model.write().unwrap();
+        match bridge.optimize() {
+            Ok(_) => Ok(()),
+            Err(e) => Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+                "{:?}",
+                e
+            ))),
         }
     }
     fn __str__(&self) -> PyResult<String> {
@@ -270,15 +241,6 @@ impl Model {
     #[pyo3(name = "ObjVal")]
     pub fn get_objval(&self) -> PyResult<Option<f64>> {
         let bridge = self.model.read().unwrap();
-        Ok(bridge.objval)
-    }
-}
-
-impl Model {
-    pub fn encode(&self) -> PyResult<Vec<u8>> {
-        let config = config::standard();
-        bincode::encode_to_vec(&self.model, config).map_err(|e| {
-            PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("Serialization error: {}", e))
-        })
+        Ok(bridge.get_objective_value())
     }
 }

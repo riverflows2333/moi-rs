@@ -56,9 +56,9 @@ impl Model {
         lbs: Option<Vec<f64>>,
         ubs: Option<Vec<f64>>,
     ) -> PyResult<Vec<usize>> {
-        let names_arg = names.map(|v| moi_solver_api::utils::NameType::Vector(v));
-        let lbs_arg = lbs.map(|v| moi_solver_api::utils::BoundType::Vector(v));
-        let ubs_arg = ubs.map(|v| moi_solver_api::utils::BoundType::Vector(v));
+        let names_arg = names.map(|v| NameType::Vector(v));
+        let lbs_arg = lbs.map(|v| BoundType::Vector(v));
+        let ubs_arg = ubs.map(|v| BoundType::Vector(v));
         let ids = self
             .optimizer
             .add_variables(n, names_arg, vtypes, lbs_arg, ubs_arg);
