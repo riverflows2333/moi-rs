@@ -4,6 +4,8 @@ build-backend = "maturin"
 
 [project]
 name = "moirspy"
+description = "A solver-independent optimization modeling API implemented in Rust"
+readme = "README.md"
 requires-python = ">=3.8"
 classifiers = [
     "Programming Language :: Rust",
@@ -11,3 +13,8 @@ classifiers = [
     "Programming Language :: Python :: Implementation :: PyPy",
 ]
 dynamic = ["version"]
+
+[project.urls]
+Homepage = "https://github.com/riverflows2333/moi-rs"
+Repository = "https://github.com/riverflows2333/moi-rs"
+Issues = "https://github.com/riverflows2333/moi-rs/issues"

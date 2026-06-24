@@ -4,6 +4,8 @@ build-backend = "maturin"
 
 [project]
 name = "moirspy-gurobi"
+description = "The native Gurobi backend for moirspy"
+readme = "README.md"
 requires-python = ">=3.8"
 classifiers = [
     "Programming Language :: Rust",
@@ -11,3 +13,8 @@ classifiers = [
     "Programming Language :: Python :: Implementation :: PyPy",
 ]
 dynamic = ["version"]
+
+[project.urls]
+Homepage = "https://github.com/riverflows2333/moi-rs"
+Repository = "https://github.com/riverflows2333/moi-rs"
+Issues = "https://github.com/riverflows2333/moi-rs/issues"
