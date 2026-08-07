@@ -12,13 +12,18 @@ if sys.platform == "win32" and GUROBI_DLL.exists():
 
 try:
     from moirspy import MOI, Model
+    from moirspy_gurobi import Env as GurobiEnv
 except ImportError:
     MOI = None
     Model = None
+    GurobiEnv = None
 
 
 @unittest.skipUnless(
-    sys.platform == "win32" and GUROBI_DLL.exists() and Model is not None,
+    sys.platform == "win32"
+    and GUROBI_DLL.exists()
+    and Model is not None
+    and GurobiEnv is not None,
     "requires the Windows Gurobi 12 runtime and built Python extensions",
 )
 class WindowsGurobiModelTests(unittest.TestCase):
@@ -103,6 +108,19 @@ class WindowsGurobiModelTests(unittest.TestCase):
         model = self.new_model("windows-invalid-input")
         with self.assertRaises(RuntimeError):
             model.addVars(2, lb=[0.0], name="x")
+
+    def test_explicit_gurobi_environment_through_high_level_model(self):
+        env = GurobiEnv(str(GUROBI_DLL))
+        env.setParam("OutputFlag", 0)
+        env.setParam("Threads", 1)
+
+        model = Model("windows-explicit-env")
+        x = model.addVar(lb=3.0, ub=5.0, name="x")
+        model.setObjective(1.0 * x, MOI.MINIMIZE)
+        model.setBackend("gurobi", env=env)
+        model.optimize()
+
+        self.assertAlmostEqual(x.X, 3.0, places=7)
 
 
 if __name__ == "__main__":
