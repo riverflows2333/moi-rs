@@ -214,12 +214,14 @@ impl Model {
 
     // 选择求解器后端
     #[pyo3(name = "setBackend")]
-    fn set_backend(&mut self, py: Python, backend: &str) -> PyResult<()> {
+    #[pyo3(signature = (backend, env=None))]
+    fn set_backend(&mut self, py: Python, backend: &str, env: Option<Py<PyAny>>) -> PyResult<()> {
         let model_instance = py
             .import(&format!("moirspy_{backend}"))
             .and_then(|module| module.getattr("Model"))
-            .and_then(|model_class| {
-                model_class.call1((Some(self.name.to_string()), None::<String>))
+            .and_then(|model_class| match env {
+                Some(env) => model_class.call1((Some(self.name.to_string()), None::<String>, env)),
+                None => model_class.call1((Some(self.name.to_string()), None::<String>)),
             })
             .map_err(|error| {
                 PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
