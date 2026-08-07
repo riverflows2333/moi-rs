@@ -3,7 +3,7 @@ use moi_core::*;
 use moi_solver_api::*;
 use moi_solver_gurobi::dynamic::*;
 use moi_solver_gurobi::wrapper::*;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 #[test]
 fn test_bridge_optimizer() {
@@ -17,7 +17,7 @@ fn test_bridge_optimizer() {
     let Ok(env) = GurobiEnv::new(api) else {
         return;
     };
-    let env = Arc::new(env);
+    let env = Arc::new(Mutex::new(env));
     let solver = GurobiOptimizer::new(env, None).unwrap();
     let mut bridge = BridgeOptimizer::new();
     let var_id1 = bridge

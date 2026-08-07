@@ -13,6 +13,7 @@ pub struct GurobiApi {
     // environment functions
     pub GRBloadenv:
         unsafe extern "C" fn(env: *mut *mut c_void, logfilename: *const c_char) -> c_int,
+    pub GRBemptyenv: unsafe extern "C" fn(env: *mut *mut c_void) -> c_int,
     pub GRBstartenv: unsafe extern "C" fn(env: *mut c_void) -> c_int,
     pub GRBfreeenv: unsafe extern "C" fn(env: *mut c_void),
     pub GRBgetenv: unsafe extern "C" fn(model: *mut c_void) -> *mut c_void,
@@ -196,6 +197,7 @@ impl GurobiApi {
                 GRBversion: *lib.get(b"GRBversion")?,
                 GRBstartenv: *lib.get(b"GRBstartenv")?,
                 GRBloadenv: *lib.get(b"GRBloadenv")?,
+                GRBemptyenv: *lib.get(b"GRBemptyenv")?,
                 GRBfreeenv: *lib.get(b"GRBfreeenv")?,
                 GRBgetenv: *lib.get(b"GRBgetenv")?,
                 GRBnewmodel: *lib.get(b"GRBnewmodel")?,

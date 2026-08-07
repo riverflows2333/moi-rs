@@ -2,7 +2,7 @@ use moi_core::*;
 use moi_solver_api::*;
 use moi_solver_gurobi::dynamic::*;
 use moi_solver_gurobi::wrapper::*;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 #[test]
 fn test_gurobi_solver_solve() {
     let Some((library, _)) = find_library() else {
@@ -15,7 +15,7 @@ fn test_gurobi_solver_solve() {
     let Ok(env) = GurobiEnv::new(api) else {
         return;
     };
-    let env = Arc::new(env);
+    let env = Arc::new(Mutex::new(env));
     let mut solver = GurobiOptimizer::new(env, None).unwrap();
     let var_id1 = solver
         .add_variable(Some("x"), Some('B'), None, None)

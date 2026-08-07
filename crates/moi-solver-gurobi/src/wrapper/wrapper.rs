@@ -4,16 +4,24 @@ use crate::wrapper::utils::*;
 use moi_core::*;
 use moi_solver_api::*;
 use std::ffi::{CString, c_char, c_double, c_int, c_void};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+
+pub type SharedGurobiEnv = Arc<Mutex<GurobiEnv>>;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GurobiEnvState {
+    Empty,
+    Started,
+}
 
 #[derive(Debug)]
 pub struct GurobiEnv {
     pub(crate) api: Arc<GurobiApi>,
     pub(crate) env: *mut c_void,
+    state: GurobiEnvState,
 }
 
 unsafe impl Send for GurobiEnv {}
-unsafe impl Sync for GurobiEnv {}
 
 impl GurobiEnv {
     pub fn new(api: Arc<GurobiApi>) -> Result<Self, String> {
@@ -30,7 +38,46 @@ impl GurobiEnv {
                 ));
             }
         }
-        Ok(Self { api, env })
+        Ok(Self {
+            api,
+            env,
+            state: GurobiEnvState::Started,
+        })
+    }
+
+    pub fn empty(api: Arc<GurobiApi>) -> Result<Self, String> {
+        let mut env: *mut c_void = std::ptr::null_mut();
+        let ret = unsafe { (api.GRBemptyenv)(&mut env as *mut *mut c_void) };
+        if ret != 0 {
+            if !env.is_null() {
+                unsafe { (api.GRBfreeenv)(env) };
+            }
+            return Err(format!(
+                "Failed to create empty Gurobi environment: error code {ret}"
+            ));
+        }
+        Ok(Self {
+            api,
+            env,
+            state: GurobiEnvState::Empty,
+        })
+    }
+
+    pub fn start(&mut self) -> Result<(), MoiError> {
+        if self.state == GurobiEnvState::Started {
+            return Ok(());
+        }
+        check_native(unsafe { (self.api.GRBstartenv)(self.env) }, "GRBstartenv")?;
+        self.state = GurobiEnvState::Started;
+        Ok(())
+    }
+
+    pub fn is_started(&self) -> bool {
+        self.state == GurobiEnvState::Started
+    }
+
+    pub fn set_param(&mut self, name: &str, value: AttrValue) -> Result<(), MoiError> {
+        set_param_value(&self.api, self.env, name, value)
     }
 }
 
@@ -45,7 +92,7 @@ impl Drop for GurobiEnv {
 }
 
 pub struct GurobiOptimizer {
-    _env: Arc<GurobiEnv>,
+    _env: SharedGurobiEnv,
     api: Arc<GurobiApi>,
     model: *mut c_void,
     // 追踪变量和约束数量
@@ -73,13 +120,20 @@ impl GurobiOptimizer {
             .map_err(|_| MoiError::InvalidName(format!("{context} contains an embedded NUL byte")))
     }
 
-    pub fn new(env: Arc<GurobiEnv>, name: Option<&str>) -> Result<Self, String> {
+    pub fn new(env: SharedGurobiEnv, name: Option<&str>) -> Result<Self, String> {
         let mut model: *mut c_void = std::ptr::null_mut();
+        let env_guard = env
+            .lock()
+            .map_err(|_| "Gurobi environment lock is poisoned".to_string())?;
+        if !env_guard.is_started() {
+            return Err("Gurobi environment must be started before creating a model".to_string());
+        }
+        let api = env_guard.api.clone();
         unsafe {
             let cname = CString::new(name.unwrap_or("model"))
                 .map_err(|_| "model name contains an embedded NUL byte".to_string())?;
-            let ret = (env.api.GRBnewmodel)(
-                env.env,
+            let ret = (api.GRBnewmodel)(
+                env_guard.env,
                 &mut model as *mut *mut c_void,
                 cname.as_ptr(),
                 0,
@@ -91,14 +145,15 @@ impl GurobiOptimizer {
             );
             if ret != 0 {
                 if !model.is_null() {
-                    (env.api.GRBfreemodel)(model);
+                    (api.GRBfreemodel)(model);
                 }
                 return Err(format!("Failed to create Gurobi model: error code {}", ret));
             }
         }
+        drop(env_guard);
         Ok(Self {
             _env: env.clone(),
-            api: env.api.clone(),
+            api,
             model,
             num_vars: 0,
             num_constrs: 0,
@@ -397,32 +452,57 @@ impl ModelLike for GurobiOptimizer {
                     )?;
                 }
                 OptimizerAttr::Raw(s) => {
-                    let name = Self::cstring(&s, "parameter name")?;
-                    let ret = match value {
-                        AttrValue::Float(v) => (self.api.GRBsetdblparam)(mod_env, name.as_ptr(), v),
-                        AttrValue::Int(v) => {
-                            (self.api.GRBsetintparam)(mod_env, name.as_ptr(), v as c_int)
-                        }
-                        AttrValue::Bool(v) => {
-                            (self.api.GRBsetintparam)(mod_env, name.as_ptr(), i32::from(v))
-                        }
-                        AttrValue::String(v) => {
-                            let value = Self::cstring(&v, "parameter value")?;
-                            (self.api.GRBsetstrparam)(mod_env, name.as_ptr(), value.as_ptr())
-                        }
-                        _ => {
-                            return Err(MoiError::InvalidInput(
-                                "raw parameter requires bool, int, float, or string".to_string(),
-                            ));
-                        }
-                    };
-                    Self::check(ret, "set raw parameter")?;
+                    set_param_value(&self.api, mod_env, &s, value)?;
                 }
                 _ => return Err(MoiError::UnsupportedAttribute),
             }
         }
         Ok(())
     }
+}
+
+fn check_native(code: c_int, context: &'static str) -> Result<(), MoiError> {
+    if code == 0 {
+        Ok(())
+    } else {
+        Err(MoiError::NativeSolver {
+            solver: "Gurobi",
+            context,
+            code,
+        })
+    }
+}
+
+fn set_param_value(
+    api: &GurobiApi,
+    env: *mut c_void,
+    name: &str,
+    value: AttrValue,
+) -> Result<(), MoiError> {
+    let name = CString::new(name).map_err(|_| {
+        MoiError::InvalidName("parameter name contains an embedded NUL byte".to_string())
+    })?;
+    let ret = unsafe {
+        match value {
+            AttrValue::Float(value) => (api.GRBsetdblparam)(env, name.as_ptr(), value),
+            AttrValue::Int(value) => (api.GRBsetintparam)(env, name.as_ptr(), value as c_int),
+            AttrValue::Bool(value) => (api.GRBsetintparam)(env, name.as_ptr(), i32::from(value)),
+            AttrValue::String(value) => {
+                let value = CString::new(value).map_err(|_| {
+                    MoiError::InvalidName(
+                        "parameter value contains an embedded NUL byte".to_string(),
+                    )
+                })?;
+                (api.GRBsetstrparam)(env, name.as_ptr(), value.as_ptr())
+            }
+            _ => {
+                return Err(MoiError::InvalidInput(
+                    "raw parameter requires bool, int, float, or string".to_string(),
+                ));
+            }
+        }
+    };
+    check_native(ret, "set raw parameter")
 }
 
 impl Optimizer for GurobiOptimizer {
