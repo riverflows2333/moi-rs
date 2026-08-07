@@ -1,10 +1,9 @@
-use crate::loader::*;
+use crate::env::{Env, attr_value_from_py, load_api};
 use moi_core::*;
 use moi_solver_api::*;
 use moi_solver_gurobi::*;
 use pyo3::prelude::*;
-use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 #[pyclass(unsendable)]
 pub struct Model {
@@ -14,33 +13,25 @@ pub struct Model {
 #[pymethods]
 impl Model {
     #[new]
-    #[pyo3(signature = (name=None, dll_path=None))]
-    pub fn new(name: Option<&str>, dll_path: Option<String>) -> PyResult<Self> {
-        let loader;
-        if let Some(path) = dll_path {
-            loader = EnvLoader::LibPath(path);
+    #[pyo3(signature = (name=None, dll_path=None, env=None))]
+    pub fn new(
+        name: Option<&str>,
+        dll_path: Option<String>,
+        env: Option<PyRef<'_, Env>>,
+    ) -> PyResult<Self> {
+        let env = if let Some(env) = env {
+            if dll_path.is_some() {
+                return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                    "dll_path and env cannot be provided together",
+                ));
+            }
+            env.inner.clone()
         } else {
-            println!(
-                "No DLL path provided, attempting to load Gurobi library from environment variables and common locations."
-            );
-            loader = match load_gurobi(None) {
-                Ok(l) => l,
-                Err(e) => {
-                    return Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e));
-                }
-            };
-        }
-        let path = loader_to_dll_path(&loader)
-            .map_err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>)?;
-        let api = GurobiApi::new(PathBuf::from(path)).map_err(|error| {
-            PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
-                "Failed to load Gurobi library: {error}"
-            ))
-        })?;
-        let api_arc = Arc::new(api);
-        let env = Arc::new(
-            GurobiEnv::new(api_arc).map_err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>)?,
-        );
+            let api = load_api(dll_path)?;
+            let env =
+                GurobiEnv::new(api).map_err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>)?;
+            Arc::new(Mutex::new(env))
+        };
         let optimizer = GurobiOptimizer::new(env, name)
             .map_err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>)?;
         Ok(Self { optimizer })
@@ -241,19 +232,7 @@ impl Model {
             s => OptimizerAttr::Raw(s.to_string()),
         };
 
-        let val = if let Ok(v) = value.extract::<bool>() {
-            AttrValue::Bool(v) // order matters, extract bool first before int/float in some cases, although pyo3 is smart
-        } else if let Ok(v) = value.extract::<i64>() {
-            AttrValue::Int(v)
-        } else if let Ok(v) = value.extract::<f64>() {
-            AttrValue::Float(v)
-        } else if let Ok(v) = value.extract::<String>() {
-            AttrValue::String(v)
-        } else {
-            return Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(
-                "Unsupported attribute value type",
-            ));
-        };
+        let val = attr_value_from_py(value)?;
 
         self.optimizer
             .set_optimizer_attr(attr_enum, val)
