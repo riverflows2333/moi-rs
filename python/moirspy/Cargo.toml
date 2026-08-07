@@ -14,4 +14,4 @@ pyo3.workspace = true
 moi-core.workspace = true
 moi-solver-api.workspace = true
 moi-bridge.workspace = true
-numpy = "0.27.1"
+numpy = "0.29.0"
