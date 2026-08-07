@@ -1,10 +1,24 @@
 from typing import List, Optional, Union
 
+ParamValue = Union[bool, int, float, str]
+
+class Env:
+    def __init__(
+        self,
+        dll_path: Optional[str] = ...,
+        empty: bool = ...,
+    ) -> None: ...
+    def setParam(self, name: str, value: ParamValue) -> None: ...
+    def start(self) -> None: ...
+    @property
+    def started(self) -> bool: ...
+
 class Model:
     def __init__(
         self,
         name: Optional[str] = ...,
         dll_path: Optional[str] = ...,
+        env: Optional[Env] = ...,
     ) -> None: ...
     def add_variable(
         self,
@@ -53,5 +67,5 @@ class Model:
     def set_optimizer_attr(
         self,
         attr: str,
-        value: Union[bool, int, float, str],
+        value: ParamValue,
     ) -> None: ...
