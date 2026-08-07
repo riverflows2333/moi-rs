@@ -81,5 +81,35 @@ The low-level API represents variables and constraints with integer IDs. Linear
 functions use parallel variable/coefficient arrays, and constraint senses are
 `"<"`, `">"`, or `"="`.
 
+### Explicit environments
+
+`Model` creates a regular environment automatically when `env` is omitted. An
+explicit environment can be configured once and reused by multiple models:
+
+```python
+from moirspy_gurobi import Env, Model
+
+env = Env(dll_path=None)
+env.setParam("OutputFlag", 0)
+env.setParam("Threads", 4)
+
+model_a = Model("a", env=env)
+model_b = Model("b", env=env)
+```
+
+Connection and licensing parameters that must be configured before startup use
+an empty environment:
+
+```python
+env = Env(empty=True)
+env.setParam("TokenServer", "server.example.com")
+env.start()
+model = Model("remote", env=env)
+```
+
+Environment parameters are copied when a model is created. Later changes to
+the original `Env` affect future models only; use `Model.set_optimizer_attr`
+to change a parameter on an existing low-level model.
+
 Full documentation and Rust source are available in the
 [`moi-rs` repository](https://github.com/riverflows2333/moi-rs).
