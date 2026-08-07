@@ -1,20 +1,18 @@
 use crate::constr::Constr;
 use crate::expr::LinExpr;
-use crate::model::Model;
 use crate::utils::*;
-use moi_bridge::BridgeOptimizer;
 use moi_core::*;
 use moi_solver_api::*;
 use pyo3::prelude::*;
 
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct Var {
     id: VarId,
     bridge: Option<SharedBridge>,
 }
 
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct Vars {
     shape: Vec<usize>,
@@ -43,7 +41,7 @@ impl Var {
     pub fn get_x(&self) -> Option<f64> {
         //NOTE: 目前仅作为占位，后续会通过桥接优化器获取变量的值
         if let Some(bridge) = &self.bridge {
-            let bridge = bridge.read().unwrap();
+            let bridge = bridge.lock().unwrap();
             bridge.get_var_value(self.id)
         } else {
             None
@@ -116,10 +114,10 @@ impl Var {
         // 判断右侧项类型，为浮点数、变量或线性表达式
         if let Ok(value) = _other.extract::<f64>() {
             afn.push_term(self.id, value);
-        } else if let Ok(var) = _other.extract::<Var>() {
+        } else if _other.extract::<Var>().is_ok() {
             // TODO: 后续会考虑非线性实现
             panic!("Multiplication of two variables is not supported in linear expressions");
-        } else if let Ok(expr) = _other.extract::<LinExpr>() {
+        } else if _other.extract::<LinExpr>().is_ok() {
             panic!(
                 "Multiplication of a variable with a linear expression is not supported in linear expressions"
             );

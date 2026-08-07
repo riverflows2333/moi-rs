@@ -1,44 +1,42 @@
-use std::ops::Deref;
-
 use moi_core::attributes::*;
 use moi_core::errors::MoiError;
-use moi_core::functions::{AffineTerm, ScalarAffineFn, ScalarFunctionType};
+use moi_core::functions::ScalarFunctionType;
 use moi_core::indices::{ConstrId, VarId};
 use moi_core::sets::ScalarSetType;
 use moi_solver_api::*;
 use pyo3::prelude::*;
-use pyo3::types::{PyDict,PyAny,PyBool,PyInt,PyFloat,PyString};
+use pyo3::types::{PyAny, PyBool, PyFloat, PyInt, PyString};
 
 pub struct PyBackend {
     pub backend: Py<PyAny>,
 }
 
 unsafe impl Send for PyBackend {}
-unsafe impl Sync for PyBackend {}
 
 impl PyBackend {
     pub fn new(backend: Py<PyAny>) -> Self {
         Self { backend }
     }
+
+    fn protocol_error(context: &str, error: PyErr) -> MoiError {
+        MoiError::BackendProtocol(format!("{context}: {error}"))
+    }
+
+    fn constraint_parts(set: ScalarSetType) -> Result<(&'static str, f64), MoiError> {
+        let bounds = scalar_set_to_bounds(&set);
+        match (bounds.lower, bounds.upper) {
+            (None, Some(value)) => Ok(("<", value)),
+            (Some(value), None) => Ok((">", value)),
+            (Some(lower), Some(upper)) if lower == upper => Ok(("=", lower)),
+            _ => Err(MoiError::UnsupportedConstraint {
+                func: "scalar linear",
+                set: "interval",
+            }),
+        }
+    }
 }
 
 impl ModelLike for PyBackend {
-    fn add_variable(
-        &mut self,
-        name: Option<&str>,
-        vtype: Option<char>,
-        lb: Option<f64>,
-        ub: Option<f64>,
-    ) -> VarId {
-        Python::attach(|py| {
-            let res = self
-                .backend
-                .call_method1(py, "add_variable", (name, vtype, lb, ub))
-                .unwrap();
-            VarId(res.extract::<usize>(py).unwrap())
-        })
-    }
-
     fn add_variables(
         &mut self,
         n: usize,
@@ -46,67 +44,47 @@ impl ModelLike for PyBackend {
         vtype: Option<Vec<char>>,
         lb: Option<BoundType>,
         ub: Option<BoundType>,
-    ) -> Vec<VarId> {
-        Python::attach(|py| {
-            let (name_val, name_list) = match name {
-                Some(NameType::Single(s)) => (Some(s), None),
-                Some(NameType::Vector(l)) => (None, Some(l)),
-                None => (None, None),
-            };
-            let (lb_val, lb_list) = match lb {
-                Some(BoundType::Single(s)) => (Some(s), None),
-                Some(BoundType::Vector(l)) => (None, Some(l)),
-                None => (None, None),
-            };
-            let (ub_val, ub_list) = match ub {
-                Some(BoundType::Single(s)) => (Some(s), None),
-                Some(BoundType::Vector(l)) => (None, Some(l)),
-                None => (None, None),
-            };
-            let res = self
-                .backend
-                .call_method1(py, "add_variables", (n, name_val, vtype, lb_val, ub_val))
-                .unwrap();
-            res.extract::<Vec<usize>>(py)
-                .unwrap()
-                .into_iter()
-                .map(VarId)
-                .collect()
-        })
-    }
+    ) -> Result<Vec<VarId>, MoiError> {
+        let names = match name {
+            Some(NameType::Single(base)) => {
+                Some((0..n).map(|i| format!("{base}_{i}")).collect::<Vec<_>>())
+            }
+            Some(NameType::Vector(values)) => {
+                ensure_len(values.len(), n, "variable names")?;
+                Some(values)
+            }
+            None => None,
+        };
+        if let Some(ref values) = vtype {
+            ensure_len(values.len(), n, "variable types")?;
+        }
+        let lbs = match lb {
+            Some(BoundType::Single(value)) => Some(vec![value; n]),
+            Some(BoundType::Vector(values)) => {
+                ensure_len(values.len(), n, "lower bounds")?;
+                Some(values)
+            }
+            None => None,
+        };
+        let ubs = match ub {
+            Some(BoundType::Single(value)) => Some(vec![value; n]),
+            Some(BoundType::Vector(values)) => {
+                ensure_len(values.len(), n, "upper bounds")?;
+                Some(values)
+            }
+            None => None,
+        };
 
-    fn add_constraint(
-        &mut self,
-        f: ScalarFunctionType,
-        s: ScalarSetType,
-        name: Option<String>,
-    ) -> ConstrId {
         Python::attach(|py| {
-            let (vars, coeffs, constant) = match f {
-                ScalarFunctionType::Affine(af) => (
-                    af.terms.iter().map(|t| t.var.0).collect::<Vec<_>>(),
-                    af.terms.iter().map(|t| t.coeff).collect::<Vec<_>>(),
-                    af.constant,
-                ),
-                ScalarFunctionType::Variable(v) => (vec![v.0], vec![1.0], 0.0),
-            };
-            let (sense, rhs) = match s {
-                ScalarSetType::LessThan(v) => ("<", v),
-                ScalarSetType::GreaterThan(v) => (">", v),
-                ScalarSetType::EqualTo(v) => ("=", v),
-                ScalarSetType::Interval(l, u) => {
-                    panic!("Interval constraints not supported via PyBackend yet")
-                }
-            };
-            let res = self
+            let result = self
                 .backend
-                .call_method1(
-                    py,
-                    "add_constraint",
-                    (vars, coeffs, sense, rhs, name, constant),
-                )
-                .unwrap();
-            ConstrId(res.extract::<usize>(py).unwrap())
+                .call_method1(py, "add_variables", (n, names, vtype, lbs, ubs))
+                .map_err(|error| Self::protocol_error("add_variables failed", error))?;
+            let ids = result
+                .extract::<Vec<usize>>(py)
+                .map_err(|error| Self::protocol_error("invalid add_variables result", error))?;
+            ensure_len(ids.len(), n, "returned variable IDs")?;
+            Ok(ids.into_iter().map(VarId).collect())
         })
     }
 
@@ -115,99 +93,94 @@ impl ModelLike for PyBackend {
         fs: Vec<ScalarFunctionType>,
         ss: Vec<ScalarSetType>,
         names: Option<Vec<String>>,
-    ) -> Vec<ConstrId> {
+    ) -> Result<Vec<ConstrId>, MoiError> {
+        ensure_len(ss.len(), fs.len(), "constraint sets")?;
+        if let Some(ref values) = names {
+            ensure_len(values.len(), fs.len(), "constraint names")?;
+        }
+
+        let mut variables = Vec::with_capacity(fs.len());
+        let mut coefficients = Vec::with_capacity(fs.len());
+        let mut constants = Vec::with_capacity(fs.len());
+        for function in &fs {
+            let linear = scalar_function_to_linear(function)?;
+            variables.push(
+                linear
+                    .variables
+                    .into_iter()
+                    .map(|variable| variable.0)
+                    .collect::<Vec<_>>(),
+            );
+            coefficients.push(linear.coefficients);
+            constants.push(linear.constant);
+        }
+
+        let mut senses = Vec::with_capacity(ss.len());
+        let mut rhs = Vec::with_capacity(ss.len());
+        for set in ss {
+            let (sense, value) = Self::constraint_parts(set)?;
+            senses.push(sense);
+            rhs.push(value);
+        }
+
         Python::attach(|py| {
-            let mut vars_list = Vec::new();
-            let mut coeffs_list = Vec::new();
-            let mut constants = Vec::new();
-            for f in fs {
-                match f {
-                    ScalarFunctionType::Affine(af) => {
-                        vars_list.push(af.terms.iter().map(|t| t.var.0).collect::<Vec<_>>());
-                        coeffs_list.push(af.terms.iter().map(|t| t.coeff).collect::<Vec<_>>());
-                        constants.push(af.constant);
-                    }
-                    ScalarFunctionType::Variable(v) => {
-                        vars_list.push(vec![v.0]);
-                        coeffs_list.push(vec![1.0]);
-                        constants.push(0.0);
-                    }
-                }
-            }
-            let mut senses = Vec::new();
-            let mut rhs_list = Vec::new();
-            for s in ss {
-                match s {
-                    ScalarSetType::LessThan(v) => {
-                        senses.push("<");
-                        rhs_list.push(v);
-                    }
-                    ScalarSetType::GreaterThan(v) => {
-                        senses.push(">");
-                        rhs_list.push(v);
-                    }
-                    ScalarSetType::EqualTo(v) => {
-                        senses.push("=");
-                        rhs_list.push(v);
-                    }
-                    ScalarSetType::Interval(l, u) => {
-                        panic!("Interval constraints not supported via PyBackend yet")
-                    }
-                }
-            }
-            let res = self
+            let result = self
                 .backend
                 .call_method1(
                     py,
                     "add_constraints",
-                    (vars_list, coeffs_list, constants, senses, rhs_list, names),
+                    (variables, coefficients, constants, senses, rhs, names),
                 )
-                .unwrap();
-            res.extract::<Vec<usize>>(py)
-                .unwrap()
-                .into_iter()
-                .map(ConstrId)
-                .collect()
+                .map_err(|error| Self::protocol_error("add_constraints failed", error))?;
+            let ids = result
+                .extract::<Vec<usize>>(py)
+                .map_err(|error| Self::protocol_error("invalid add_constraints result", error))?;
+            ensure_len(ids.len(), fs.len(), "returned constraint IDs")?;
+            Ok(ids.into_iter().map(ConstrId).collect())
         })
     }
 
     fn set_objective(&mut self, f: ScalarFunctionType, sense: ModelSense) -> Result<(), MoiError> {
+        let linear = scalar_function_to_linear(&f)?;
+        let variables = linear
+            .variables
+            .into_iter()
+            .map(|variable| variable.0)
+            .collect::<Vec<_>>();
+        let sense = match sense {
+            ModelSense::Maximize => 1,
+            ModelSense::Minimize => -1,
+        };
         Python::attach(|py| {
-            let (vars, coeffs, constant) = match f {
-                ScalarFunctionType::Affine(af) => (
-                    af.terms.iter().map(|t| t.var.0).collect::<Vec<_>>(),
-                    af.terms.iter().map(|t| t.coeff).collect::<Vec<_>>(),
-                    af.constant,
-                ),
-                ScalarFunctionType::Variable(v) => (vec![v.0], vec![1.0], 0.0),
-            };
-            let s = match sense {
-                ModelSense::Maximize => 1,
-                ModelSense::Minimize => -1,
-            };
             self.backend
-                .call_method1(py, "set_objective", (vars, coeffs, constant, s))
-                .unwrap();
+                .call_method1(
+                    py,
+                    "set_objective",
+                    (variables, linear.coefficients, linear.constant, sense),
+                )
+                .map_err(|error| Self::protocol_error("set_objective failed", error))?;
             Ok(())
         })
     }
 
     fn update(&mut self) -> Result<(), MoiError> {
         Python::attach(|py| {
-            self.backend.call_method0(py, "update").unwrap();
+            self.backend
+                .call_method0(py, "update")
+                .map_err(|error| Self::protocol_error("update failed", error))?;
             Ok(())
         })
     }
 
-    fn get_model_attr(&self, attr: ModelAttr) -> Option<AttrValue> {
+    fn get_model_attr(&self, _attr: ModelAttr) -> Option<AttrValue> {
         None
     }
 
-    fn set_model_attr(&mut self, attr: ModelAttr, value: AttrValue) -> Result<(), MoiError> {
-        Ok(())
+    fn set_model_attr(&mut self, _attr: ModelAttr, _value: AttrValue) -> Result<(), MoiError> {
+        Err(MoiError::UnsupportedAttribute)
     }
 
-    fn get_optimizer_attr(&self, attr: OptimizerAttr) -> Option<AttrValue> {
+    fn get_optimizer_attr(&self, _attr: OptimizerAttr) -> Option<AttrValue> {
         None
     }
 
@@ -218,19 +191,23 @@ impl ModelLike for PyBackend {
     ) -> Result<(), MoiError> {
         Python::attach(|py| {
             let attr_name = match attr {
-                OptimizerAttr::Raw(s) => s,
-                _ => format!("{:?}", attr),
+                OptimizerAttr::Raw(name) => name,
+                _ => format!("{attr:?}"),
             };
-            let val:Bound<'_, PyAny> = match value {
-                AttrValue::Int(i) => PyInt::new(py, i).into_any(),
-                AttrValue::Float(f) => PyFloat::new(py, f).into_any(),
-                AttrValue::Bool(b) => PyBool::new(py, b).as_any().clone(),
-                AttrValue::String(s) => PyString::new(py, &s).into_any(),
-                _ => panic!("Unsupported attribute value type for PyBackend"),
+            let value: Bound<'_, PyAny> = match value {
+                AttrValue::Int(value) => PyInt::new(py, value).into_any(),
+                AttrValue::Float(value) => PyFloat::new(py, value).into_any(),
+                AttrValue::Bool(value) => PyBool::new(py, value).as_any().clone(),
+                AttrValue::String(value) => PyString::new(py, &value).into_any(),
+                _ => {
+                    return Err(MoiError::InvalidInput(
+                        "optimizer attribute requires bool, int, float, or string".to_string(),
+                    ));
+                }
             };
             self.backend
-                .call_method1(py, "set_optimizer_attr", (attr_name, val))
-                .unwrap();
+                .call_method1(py, "set_optimizer_attr", (attr_name, value))
+                .map_err(|error| Self::protocol_error("set_optimizer_attr failed", error))?;
             Ok(())
         })
     }
@@ -239,38 +216,40 @@ impl ModelLike for PyBackend {
 impl Optimizer for PyBackend {
     fn optimize(&mut self) -> Result<SolveStatus, MoiError> {
         Python::attach(|py| {
-            let res = self.backend.call_method0(py, "optimize").unwrap();
-            let status_code = res.extract::<u32>(py).unwrap();
-            let status = match status_code {
-                2 => SolveStatus::Optimal,
-                3 => SolveStatus::Infeasible,
-                _ => SolveStatus::Unknown,
-            };
-            Ok(status)
+            let result = self
+                .backend
+                .call_method0(py, "optimize")
+                .map_err(|error| Self::protocol_error("optimize failed", error))?;
+            let code = result
+                .extract::<u32>(py)
+                .map_err(|error| Self::protocol_error("invalid optimize result", error))?;
+            Ok(SolveStatus::from_code(code))
         })
     }
 
     fn compute_conflict(&mut self) -> Result<(), MoiError> {
-        Ok(())
+        Err(MoiError::Msg(
+            "conflict computation is not implemented by the Python backend protocol".to_string(),
+        ))
     }
 
     fn get_var_value(&self, var_id: VarId) -> Option<f64> {
         Python::attach(|py| {
-            let res = self
-                .backend
+            self.backend
                 .call_method1(py, "get_var_value", (var_id.0,))
-                .unwrap();
-            res.extract::<Option<f64>>(py).unwrap()
+                .ok()?
+                .extract::<Option<f64>>(py)
+                .ok()?
         })
     }
 
     fn get_objective_value(&self) -> Option<f64> {
         Python::attach(|py| {
-            let res = self
-                .backend
+            self.backend
                 .call_method0(py, "get_objective_value")
-                .unwrap();
-            res.extract::<Option<f64>>(py).unwrap()
+                .ok()?
+                .extract::<Option<f64>>(py)
+                .ok()?
         })
     }
 }

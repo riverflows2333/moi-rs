@@ -1,5 +1,5 @@
 from unittest import TestCase
-from moipy import Var, LinExpr
+from moirspy import LinExpr, Var
 
 
 class TestVar(TestCase):
@@ -7,7 +7,7 @@ class TestVar(TestCase):
         v1 = Var(1)
         v2 = Var(2)
         expr = v1 + v2 + 3
-        print(expr)
+        self.assertIsInstance(expr, LinExpr)
 
     def test_var_expr_add(self):
         v1 = Var(1)
@@ -15,14 +15,14 @@ class TestVar(TestCase):
         expr1 = v1 + v2
         v3 = Var(3)
         expr2 = expr1 + v3
-        print(expr2)
+        self.assertIsInstance(expr2, LinExpr)
 
     def test_multi_var_expr(self):
         v1 = Var(1)
         v2 = Var(2)
         v3 = Var(3)
         expr = 6 + v1 + 2 * v2 - (3 * v3 - 5) * 3
-        print(expr)
+        self.assertIsInstance(expr, LinExpr)
 
 
 if __name__ == "__main__":

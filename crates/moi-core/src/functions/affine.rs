@@ -1,7 +1,7 @@
 use crate::functions::function::*;
 use crate::indices::VarId;
+use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
-use bincode::{Encode, Decode};
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Encode, Decode)]
 pub struct AffineTerm {
     pub var: VarId,
@@ -33,14 +33,14 @@ impl ScalarAffineFn {
         }
     }
     pub fn simplify(&mut self) {
-        self.terms.sort_by(|a, b| a.var.0.cmp(&b.var.0));
+        self.terms.sort_by_key(|term| term.var.0);
         let mut merged: Vec<AffineTerm> = Vec::with_capacity(self.terms.len());
         for t in &self.terms {
-            if let Some(last) = merged.last_mut() {
-                if last.var == t.var {
-                    last.coeff += t.coeff;
-                    continue;
-                }
+            if let Some(last) = merged.last_mut()
+                && last.var == t.var
+            {
+                last.coeff += t.coeff;
+                continue;
             }
             merged.push(t.clone());
         }

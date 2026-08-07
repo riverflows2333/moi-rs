@@ -1,6 +1,7 @@
 // This module exposes the generated bindings.
-// You might want to use features to conditionally compile valid bindings 
+// You might want to use features to conditionally compile valid bindings
 // if multiple are present in the future.
+#[allow(non_upper_case_globals)]
 mod gen120;
 
 #[cfg(feature = "gurobi120")]

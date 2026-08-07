@@ -1,12 +1,12 @@
-pub mod py_backend;
 pub mod constr;
 pub mod env;
 pub mod expr;
+pub mod function;
 pub mod model;
 pub mod moi;
-pub mod var;
+pub mod py_backend;
 pub mod utils;
-pub mod function;
+pub mod var;
 use pyo3::prelude::*;
 /// A Python module implemented in Rust.
 

@@ -19,8 +19,9 @@ pub struct BridgeOptimizer {
     pub obj: Option<ScalarFunctionType>,
     pub sense: Option<ModelSense>,
     pub status: BridgeState,
-    pub backend: Option<Box<dyn Optimizer + Send + Sync>>,
+    pub backend: Option<Box<dyn Optimizer + Send>>,
     pub raw_params: HashMap<OptimizerAttr, AttrValue>,
+    solution_valid: bool,
 }
 
 impl BridgeOptimizer {
@@ -33,11 +34,21 @@ impl BridgeOptimizer {
             status: BridgeState::NotAttached,
             backend: None,
             raw_params: HashMap::new(),
+            solution_valid: false,
         }
     }
 
     /// 关联后端求解器并执行“大冲刷”（一次性同步所有本地缓存的状态）
-    pub fn attach_backend(&mut self, mut backend: Box<dyn Optimizer + Send + Sync>) -> Result<(), MoiError> {
+    pub fn attach_backend(
+        &mut self,
+        mut backend: Box<dyn Optimizer + Send>,
+    ) -> Result<(), MoiError> {
+        if self.backend.is_some() {
+            return Err(MoiError::BackendState(
+                "a backend is already attached".to_string(),
+            ));
+        }
+
         // 1. 同步变量
         if !self.vars.is_empty() {
             let n = self.vars.len();
@@ -46,13 +57,14 @@ impl BridgeOptimizer {
             let lbs: Vec<f64> = self.vars.iter().map(|v| v.lb).collect();
             let ubs: Vec<f64> = self.vars.iter().map(|v| v.ub).collect();
 
-            backend.add_variables(
+            let ids = backend.add_variables(
                 n,
                 Some(NameType::Vector(names)),
                 Some(vtypes),
                 Some(BoundType::Vector(lbs)),
                 Some(BoundType::Vector(ubs)),
-            );
+            )?;
+            Self::ensure_expected_var_ids(&ids, 0)?;
         }
 
         // 2. 同步约束
@@ -73,7 +85,8 @@ impl BridgeOptimizer {
                 .map(|(_, info)| info.name.clone())
                 .collect();
 
-            backend.add_constraints(fs, ss, Some(names));
+            let ids = backend.add_constraints(fs, ss, Some(names))?;
+            Self::ensure_expected_constr_ids(&ids, 0)?;
         }
 
         // 3. 同步目标函数和优化方向
@@ -88,6 +101,7 @@ impl BridgeOptimizer {
 
         self.backend = Some(backend);
         self.status = BridgeState::Synced;
+        self.solution_valid = false;
         Ok(())
     }
 
@@ -98,35 +112,53 @@ impl BridgeOptimizer {
     pub fn get_var_name_by_id(&self, id: VarId) -> Option<String> {
         self.vars.get(id.0).map(|var| var.name.clone())
     }
+
+    fn ensure_expected_var_ids(ids: &[VarId], start: usize) -> Result<(), MoiError> {
+        for (offset, id) in ids.iter().enumerate() {
+            let actual = id.0;
+            let expected = start + offset;
+            if actual != expected {
+                return Err(MoiError::BackendProtocol(format!(
+                    "backend returned variable ID {actual}, expected {expected}"
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    fn ensure_expected_constr_ids(ids: &[ConstrId], start: usize) -> Result<(), MoiError> {
+        for (offset, id) in ids.iter().enumerate() {
+            let actual = id.0;
+            let expected = start + offset;
+            if actual != expected {
+                return Err(MoiError::BackendProtocol(format!(
+                    "backend returned constraint ID {actual}, expected {expected}"
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    fn validate_function(&self, function: &ScalarFunctionType) -> Result<(), MoiError> {
+        let linear = scalar_function_to_linear(function)?;
+        if let Some(var) = linear
+            .variables
+            .into_iter()
+            .find(|var| var.0 >= self.vars.len())
+        {
+            return Err(MoiError::InvalidVariableIndex(var.0));
+        }
+        Ok(())
+    }
+}
+
+impl Default for BridgeOptimizer {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ModelLike for BridgeOptimizer {
-    fn add_variable(
-        &mut self,
-        name: Option<&str>,
-        vtype: Option<char>,
-        lb: Option<f64>,
-        ub: Option<f64>,
-    ) -> VarId {
-        let var_id = self.vars.len();
-        let info = VarInfo {
-            col_index: var_id,
-            lb: lb.unwrap_or(0.0),
-            ub: ub.unwrap_or(f64::INFINITY),
-            vtype: vtype.unwrap_or('C'),
-            name: name.unwrap_or("").to_string(),
-            value: None,
-        };
-        self.vars.push(info.clone());
-
-        if self.status == BridgeState::Synced {
-            if let Some(ref mut b) = self.backend {
-                b.add_variable(name, vtype, lb, ub);
-            }
-        }
-        VarId(var_id)
-    }
-
     fn add_variables(
         &mut self,
         n: usize,
@@ -134,54 +166,64 @@ impl ModelLike for BridgeOptimizer {
         vtype: Option<Vec<char>>,
         lb: Option<BoundType>,
         ub: Option<BoundType>,
-    ) -> Vec<VarId> {
+    ) -> Result<Vec<VarId>, MoiError> {
         let start_id = self.vars.len();
-        // 简化实现：循环调用 add_variable 以确保逻辑一致
-        // 在高性能需求下，这里可以优化为直接构建批量数据并同步至 backend
-        let mut ids = Vec::with_capacity(n);
-        for i in 0..n {
-            let cur_name = match &name {
-                Some(NameType::Single(s)) if !s.is_empty() => Some(format!("{}_{}", s, i)),
-                Some(NameType::Vector(v)) => Some(v[i].clone()),
-                _ => None,
-            };
-            let cur_vtype = vtype.as_ref().map(|v| v[i]);
-            let cur_lb = match &lb {
-                Some(BoundType::Single(val)) => Some(*val),
-                Some(BoundType::Vector(v)) => Some(v[i]),
-                None => None,
-            };
-            let cur_ub = match &ub {
-                Some(BoundType::Single(val)) => Some(*val),
-                Some(BoundType::Vector(v)) => Some(v[i]),
-                None => None,
-            };
-            ids.push(self.add_variable(cur_name.as_deref(), cur_vtype, cur_lb, cur_ub));
-        }
-        ids
-    }
-
-    fn add_constraint(
-        &mut self,
-        f: ScalarFunctionType,
-        s: ScalarSetType,
-        name: Option<String>,
-    ) -> ConstrId {
-        let constr_id = ConstrId(self.constrs.len());
-        let info = ConstrInfo {
-            row_index: constr_id.0,
-            name: name.clone().unwrap_or_default(),
-            f: f.clone(),
-            s: s.clone(),
-        };
-        self.constrs.insert(constr_id, info);
-
-        if self.status == BridgeState::Synced {
-            if let Some(ref mut b) = self.backend {
-                b.add_constraint(f, s, name);
+        let names = match name {
+            Some(NameType::Single(base)) => {
+                (0..n).map(|i| format!("{base}_{i}")).collect::<Vec<_>>()
             }
+            Some(NameType::Vector(values)) => {
+                ensure_len(values.len(), n, "variable names")?;
+                values
+            }
+            None => vec![String::new(); n],
+        };
+        let vtypes = match vtype {
+            Some(values) => {
+                ensure_len(values.len(), n, "variable types")?;
+                values
+            }
+            None => vec!['C'; n],
+        };
+        let lbs = match lb {
+            Some(BoundType::Single(value)) => vec![value; n],
+            Some(BoundType::Vector(values)) => {
+                ensure_len(values.len(), n, "lower bounds")?;
+                values
+            }
+            None => vec![0.0; n],
+        };
+        let ubs = match ub {
+            Some(BoundType::Single(value)) => vec![value; n],
+            Some(BoundType::Vector(values)) => {
+                ensure_len(values.len(), n, "upper bounds")?;
+                values
+            }
+            None => vec![f64::INFINITY; n],
+        };
+
+        let ids = (start_id..start_id + n).map(VarId).collect::<Vec<_>>();
+        if let Some(ref mut backend) = self.backend {
+            let backend_ids = backend.add_variables(
+                n,
+                Some(NameType::Vector(names.clone())),
+                Some(vtypes.clone()),
+                Some(BoundType::Vector(lbs.clone())),
+                Some(BoundType::Vector(ubs.clone())),
+            )?;
+            Self::ensure_expected_var_ids(&backend_ids, start_id)?;
         }
-        constr_id
+
+        self.vars.extend((0..n).map(|i| VarInfo {
+            col_index: start_id + i,
+            lb: lbs[i],
+            ub: ubs[i],
+            vtype: vtypes[i],
+            name: names[i].clone(),
+            value: None,
+        }));
+        self.solution_valid = false;
+        Ok(ids)
     }
 
     fn add_constraints(
@@ -189,27 +231,53 @@ impl ModelLike for BridgeOptimizer {
         fs: Vec<ScalarFunctionType>,
         ss: Vec<ScalarSetType>,
         names: Option<Vec<String>>,
-    ) -> Vec<ConstrId> {
-        let mut ids = Vec::with_capacity(fs.len());
-        let names_vec = names.unwrap_or_else(|| vec!["".to_string(); fs.len()]);
-        for ((f, s), n) in fs
-            .into_iter()
-            .zip(ss.into_iter())
-            .zip(names_vec.into_iter())
-        {
-            ids.push(self.add_constraint(f, s, Some(n)));
+    ) -> Result<Vec<ConstrId>, MoiError> {
+        ensure_len(ss.len(), fs.len(), "constraint sets")?;
+        let names = match names {
+            Some(values) => {
+                ensure_len(values.len(), fs.len(), "constraint names")?;
+                values
+            }
+            None => vec![String::new(); fs.len()],
+        };
+        for function in &fs {
+            self.validate_function(function)?;
         }
-        ids
+
+        let start_id = self.constrs.len();
+        let ids = (start_id..start_id + fs.len())
+            .map(ConstrId)
+            .collect::<Vec<_>>();
+        if let Some(ref mut backend) = self.backend {
+            let backend_ids =
+                backend.add_constraints(fs.clone(), ss.clone(), Some(names.clone()))?;
+            Self::ensure_expected_constr_ids(&backend_ids, start_id)?;
+        }
+
+        for (offset, ((f, s), name)) in fs.into_iter().zip(ss).zip(names).enumerate() {
+            let id = ConstrId(start_id + offset);
+            self.constrs.insert(
+                id,
+                ConstrInfo {
+                    row_index: id.0,
+                    name,
+                    f,
+                    s,
+                },
+            );
+        }
+        self.solution_valid = false;
+        Ok(ids)
     }
 
     fn set_objective(&mut self, f: ScalarFunctionType, sense: ModelSense) -> Result<(), MoiError> {
+        self.validate_function(&f)?;
+        if let Some(ref mut backend) = self.backend {
+            backend.set_objective(f.clone(), sense)?;
+        }
         self.obj = Some(f.clone());
         self.sense = Some(sense);
-        if self.status == BridgeState::Synced {
-            if let Some(ref mut b) = self.backend {
-                b.set_objective(f, sense)?;
-            }
-        }
+        self.solution_valid = false;
         Ok(())
     }
 
@@ -221,14 +289,12 @@ impl ModelLike for BridgeOptimizer {
     }
 
     fn get_model_attr(&self, attr: ModelAttr) -> Option<AttrValue> {
-        if let Some(ref b) = self.backend {
-            b.get_model_attr(attr)
-        } else {
-            match attr {
-                ModelAttr::ObjectiveSense => self.sense.map(AttrValue::ModelSense),
-                ModelAttr::ObjectiveFunction => self.obj.clone().map(AttrValue::ScalarFn),
-                _ => None,
-            }
+        match attr {
+            ModelAttr::ObjectiveSense => self.sense.map(AttrValue::ModelSense),
+            ModelAttr::ObjectiveFunction => self.obj.clone().map(AttrValue::ScalarFn),
+            ModelAttr::NumberOfVariables => Some(AttrValue::Usize(self.vars.len())),
+            ModelAttr::NumberOfConstraints => Some(AttrValue::Usize(self.constrs.len())),
+            _ => self.backend.as_ref().and_then(|b| b.get_model_attr(attr)),
         }
     }
 
@@ -236,12 +302,24 @@ impl ModelLike for BridgeOptimizer {
         match attr {
             ModelAttr::ObjectiveSense => {
                 if let AttrValue::ModelSense(s) = value {
-                    self.set_objective(self.obj.clone().unwrap(), s)?;
+                    let objective = self
+                        .obj
+                        .clone()
+                        .unwrap_or_else(|| ScalarFunctionType::Affine(ScalarAffineFn::default()));
+                    self.set_objective(objective, s)?;
+                } else {
+                    return Err(MoiError::InvalidInput(
+                        "ObjectiveSense requires AttrValue::ModelSense".to_string(),
+                    ));
                 }
             }
             ModelAttr::ObjectiveFunction => {
                 if let AttrValue::ScalarFn(f) = value {
                     self.set_objective(f, self.sense.unwrap_or(ModelSense::Minimize))?;
+                } else {
+                    return Err(MoiError::InvalidInput(
+                        "ObjectiveFunction requires AttrValue::ScalarFn".to_string(),
+                    ));
                 }
             }
             _ => {
@@ -254,11 +332,10 @@ impl ModelLike for BridgeOptimizer {
     }
 
     fn get_optimizer_attr(&self, attr: OptimizerAttr) -> Option<AttrValue> {
-        if let Some(ref b) = self.backend {
-            b.get_optimizer_attr(attr)
-        } else {
-            self.raw_params.get(&attr).cloned()
-        }
+        self.backend
+            .as_ref()
+            .and_then(|backend| backend.get_optimizer_attr(attr.clone()))
+            .or_else(|| self.raw_params.get(&attr).cloned())
     }
 
     fn set_optimizer_attr(
@@ -266,10 +343,11 @@ impl ModelLike for BridgeOptimizer {
         attr: OptimizerAttr,
         value: AttrValue,
     ) -> Result<(), MoiError> {
-        self.raw_params.insert(attr.clone(), value.clone());
         if let Some(ref mut b) = self.backend {
-            b.set_optimizer_attr(attr, value)?;
+            b.set_optimizer_attr(attr.clone(), value.clone())?;
         }
+        self.raw_params.insert(attr, value);
+        self.solution_valid = false;
         Ok(())
     }
 }
@@ -277,7 +355,11 @@ impl ModelLike for BridgeOptimizer {
 impl Optimizer for BridgeOptimizer {
     fn optimize(&mut self) -> Result<SolveStatus, MoiError> {
         match self.backend {
-            Some(ref mut b) => b.optimize(),
+            Some(ref mut b) => {
+                let status = b.optimize()?;
+                self.solution_valid = true;
+                Ok(status)
+            }
             None => Err(MoiError::Msg("No backend solver attached".to_string())),
         }
     }
@@ -290,10 +372,14 @@ impl Optimizer for BridgeOptimizer {
     }
 
     fn get_var_value(&self, var_id: VarId) -> Option<f64> {
-        self.backend.as_ref().and_then(|b| b.get_var_value(var_id))
+        self.solution_valid
+            .then(|| self.backend.as_ref().and_then(|b| b.get_var_value(var_id)))
+            .flatten()
     }
 
     fn get_objective_value(&self) -> Option<f64> {
-        self.backend.as_ref().and_then(|b| b.get_objective_value())
+        self.solution_valid
+            .then(|| self.backend.as_ref().and_then(|b| b.get_objective_value()))
+            .flatten()
     }
 }

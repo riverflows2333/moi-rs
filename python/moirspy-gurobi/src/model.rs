@@ -6,7 +6,7 @@ use pyo3::prelude::*;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-#[pyclass]
+#[pyclass(unsendable)]
 pub struct Model {
     optimizer: GurobiOptimizer,
 }
@@ -15,7 +15,7 @@ pub struct Model {
 impl Model {
     #[new]
     #[pyo3(signature = (name=None, dll_path=None))]
-    pub fn new(name: Option<&str>, dll_path: Option<String>) -> Self {
+    pub fn new(name: Option<&str>, dll_path: Option<String>) -> PyResult<Self> {
         let loader;
         if let Some(path) = dll_path {
             loader = EnvLoader::LibPath(path);
@@ -25,15 +25,25 @@ impl Model {
             );
             loader = match load_gurobi(None) {
                 Ok(l) => l,
-                Err(e) => panic!("Failed to load Gurobi library: {}", e),
+                Err(e) => {
+                    return Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e));
+                }
             };
         }
-        let api =
-            GurobiApi::new(PathBuf::from(loader_to_dll_path(&loader.clone()).unwrap())).unwrap();
+        let path = loader_to_dll_path(&loader)
+            .map_err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>)?;
+        let api = GurobiApi::new(PathBuf::from(path)).map_err(|error| {
+            PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+                "Failed to load Gurobi library: {error}"
+            ))
+        })?;
         let api_arc = Arc::new(api);
-        let env = Arc::new(GurobiEnv::new(api_arc).unwrap());
-        let optimizer = GurobiOptimizer::new(env, name).unwrap();
-        Self { optimizer }
+        let env = Arc::new(
+            GurobiEnv::new(api_arc).map_err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>)?,
+        );
+        let optimizer = GurobiOptimizer::new(env, name)
+            .map_err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>)?;
+        Ok(Self { optimizer })
     }
 
     #[pyo3(signature = (name=None, vtype=None, lb=None, ub=None))]
@@ -44,7 +54,10 @@ impl Model {
         lb: Option<f64>,
         ub: Option<f64>,
     ) -> PyResult<usize> {
-        Ok(self.optimizer.add_variable(name, vtype, lb, ub).0)
+        self.optimizer
+            .add_variable(name, vtype, lb, ub)
+            .map(|id| id.0)
+            .map_err(to_py_runtime_error)
     }
 
     #[pyo3(signature = (n, names=None, vtypes=None, lbs=None, ubs=None))]
@@ -61,7 +74,8 @@ impl Model {
         let ubs_arg = ubs.map(|v| BoundType::Vector(v));
         let ids = self
             .optimizer
-            .add_variables(n, names_arg, vtypes, lbs_arg, ubs_arg);
+            .add_variables(n, names_arg, vtypes, lbs_arg, ubs_arg)
+            .map_err(to_py_runtime_error)?;
         Ok(ids.iter().map(|id| id.0).collect())
     }
 
@@ -75,6 +89,7 @@ impl Model {
         rhs: f64,
         name: Option<String>,
     ) -> PyResult<usize> {
+        ensure_py_len(coeffs.len(), vars.len(), "coefficients")?;
         let f = ScalarFunctionType::Affine(ScalarAffineFn {
             terms: vars
                 .iter()
@@ -96,7 +111,10 @@ impl Model {
                 ));
             }
         };
-        Ok(self.optimizer.add_constraint(f, s, name).0)
+        self.optimizer
+            .add_constraint(f, s, name)
+            .map(|id| id.0)
+            .map_err(to_py_runtime_error)
     }
 
     #[pyo3(signature = (fs_vars, fs_coeffs, fs_consts, senses, rhss, names=None))]
@@ -109,8 +127,24 @@ impl Model {
         rhss: Vec<f64>,
         names: Option<Vec<String>>,
     ) -> PyResult<Vec<usize>> {
+        ensure_py_len(
+            fs_coeffs.len(),
+            fs_vars.len(),
+            "constraint coefficient rows",
+        )?;
+        ensure_py_len(fs_consts.len(), fs_vars.len(), "constraint constants")?;
+        ensure_py_len(senses.len(), fs_vars.len(), "constraint senses")?;
+        ensure_py_len(rhss.len(), fs_vars.len(), "constraint right-hand sides")?;
+        if let Some(ref values) = names {
+            ensure_py_len(values.len(), fs_vars.len(), "constraint names")?;
+        }
         let mut fs = Vec::with_capacity(fs_vars.len());
         for i in 0..fs_vars.len() {
+            ensure_py_len(
+                fs_coeffs[i].len(),
+                fs_vars[i].len(),
+                "constraint coefficients",
+            )?;
             fs.push(ScalarFunctionType::Affine(ScalarAffineFn {
                 terms: fs_vars[i]
                     .iter()
@@ -127,13 +161,18 @@ impl Model {
             .into_iter()
             .zip(rhss.into_iter())
             .map(|(sense, rhs)| match sense {
-                '<' => ScalarSetType::LessThan(rhs),
-                '>' => ScalarSetType::GreaterThan(rhs),
-                '=' => ScalarSetType::EqualTo(rhs),
-                _ => ScalarSetType::EqualTo(rhs),
+                '<' => Ok(ScalarSetType::LessThan(rhs)),
+                '>' => Ok(ScalarSetType::GreaterThan(rhs)),
+                '=' => Ok(ScalarSetType::EqualTo(rhs)),
+                _ => Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                    "Invalid sense character: {sense}"
+                ))),
             })
-            .collect();
-        let ids = self.optimizer.add_constraints(fs, ss, names);
+            .collect::<PyResult<Vec<_>>>()?;
+        let ids = self
+            .optimizer
+            .add_constraints(fs, ss, names)
+            .map_err(to_py_runtime_error)?;
         Ok(ids.iter().map(|id| id.0).collect())
     }
 
@@ -144,6 +183,7 @@ impl Model {
         constant: f64,
         sense: i32,
     ) -> PyResult<()> {
+        ensure_py_len(coeffs.len(), vars.len(), "objective coefficients")?;
         let f = ScalarFunctionType::Affine(ScalarAffineFn {
             terms: vars
                 .iter()
@@ -179,7 +219,7 @@ impl Model {
                 e
             ))
         })?;
-        Ok(status as u32)
+        Ok(status.code())
     }
 
     pub fn get_var_value(&self, var_id: usize) -> Option<f64> {
@@ -219,5 +259,19 @@ impl Model {
             .set_optimizer_attr(attr_enum, val)
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("{:?}", e)))?;
         Ok(())
+    }
+}
+
+fn to_py_runtime_error(error: MoiError) -> PyErr {
+    PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(error.to_string())
+}
+
+fn ensure_py_len(actual: usize, expected: usize, field: &str) -> PyResult<()> {
+    if actual == expected {
+        Ok(())
+    } else {
+        Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+            "{field} has length {actual}, expected {expected}"
+        )))
     }
 }

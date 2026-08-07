@@ -1,4 +1,6 @@
-use moi_core::attributes::{ConstraintAttr, ModelAttr, OptimizerAttr, VariableAttr,AttrValue,ModelSense};
+use moi_core::attributes::{
+    AttrValue, ConstraintAttr, ModelAttr, ModelSense, OptimizerAttr, VariableAttr,
+};
 use moi_core::functions::ScalarAffineFn;
 use moi_model_dummy::DummyModel;
 use moi_solver_api::ModelLike;

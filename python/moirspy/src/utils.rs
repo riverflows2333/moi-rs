@@ -1,10 +1,7 @@
-use moi_core::AttrValue;
-use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyList, PyString, PyTuple};
 use moi_bridge::BridgeOptimizer;
-use std::sync::{Arc, RwLock};
-use pyo3::conversion::*;
-pub type SharedBridge = Arc<RwLock<BridgeOptimizer>>;
+use pyo3::prelude::*;
+use std::sync::{Arc, Mutex};
+pub type SharedBridge = Arc<Mutex<BridgeOptimizer>>;
 #[derive(Clone, Debug)]
 pub enum Param<T> {
     Scalar(T),
@@ -63,8 +60,9 @@ pub fn generate_names(base: &str, shape: &[usize]) -> Vec<String> {
         .collect()
 }
 
+#[cfg(test)]
 mod tests {
-    use super::*;
+    use super::num2index;
     #[test]
     fn test_num2index() {
         let shape = vec![2, 3, 4];

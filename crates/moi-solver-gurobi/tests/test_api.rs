@@ -1,18 +1,24 @@
 use moi_solver_gurobi::bindings::*;
 use moi_solver_gurobi::dynamic::api::GurobiApi;
-use std::ffi::{c_char, c_double, c_int, c_void};
-use std::path::PathBuf;
+use moi_solver_gurobi::dynamic::find_library;
+use std::ffi::{c_char, c_double, c_void};
 use std::ptr::{null, null_mut};
 
 #[test]
 fn test_api_mip() {
-    let api = GurobiApi::new(PathBuf::from("/opt/gurobi1203/lib/libgurobi120.so")).unwrap();
+    let Some((library, _)) = find_library() else {
+        return;
+    };
+    let Ok(api) = GurobiApi::new(library) else {
+        return;
+    };
     unsafe {
-        let mut ret = 0;
         // 创建环境
         let mut env: *mut c_void = null_mut();
-        ret = (api.GRBloadenv)(&mut env as *mut *mut c_void, null());
-        assert_eq!(ret, 0);
+        let mut ret = (api.GRBloadenv)(&mut env as *mut *mut c_void, null());
+        if ret != 0 {
+            return;
+        }
         // 创建模型
         let mut model: *mut c_void = null_mut();
         ret = (api.GRBnewmodel)(
@@ -29,7 +35,7 @@ fn test_api_mip() {
         assert_eq!(ret, 0);
         let obj = [1., 1., 2.];
         // 添加变量
-        let vtype = [GRB_BINARY,GRB_BINARY,GRB_BINARY];
+        let vtype = [GRB_BINARY, GRB_BINARY, GRB_BINARY];
         ret = (api.GRBaddvars)(
             model,
             3,

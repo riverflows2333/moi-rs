@@ -1,59 +1,65 @@
-import pytest
+import os
+import sys
+import unittest
+from pathlib import Path
+
+
+GUROBI_HOME = Path(os.environ.get("GUROBI_HOME", r"D:\env\gurobi1203\win64"))
+GUROBI_DLL = GUROBI_HOME / "bin" / "gurobi120.dll"
 
 try:
     from moirspy_gurobi import Model
-    HAS_GUROBI_MODULE = True
 except ImportError:
-    HAS_GUROBI_MODULE = False
+    Model = None
 
-@pytest.mark.skipif(not HAS_GUROBI_MODULE, reason="moirspy_gurobi not built")
-def test_basic_model_operations():
-    # Attempt to load without explicit path. Will succeed if gurobi is in LD_LIBRARY_PATH
-    try:
-        model = Model("TestModel", None)
-    except Exception as e:
-        pytest.skip(f"Could not load Gurobi: {e}")
-        return
 
-    # Add variables: 2 continuous variables, LB=0, UB=None
-    v1 = model.add_variable(name="x0", vtype='C', lb=0.0, ub=float('inf'))
-    v2 = model.add_variable(name="x1", vtype='C', lb=0.0, ub=float('inf'))
-    
-    assert v1 == 0
-    assert v2 == 1
+@unittest.skipUnless(
+    sys.platform == "win32" and GUROBI_DLL.exists() and Model is not None,
+    "requires the Windows Gurobi 12 runtime and built moirspy_gurobi extension",
+)
+class LowLevelWindowsGurobiTests(unittest.TestCase):
+    def test_basic_model_operations(self):
+        model = Model("low-level-windows", str(GUROBI_DLL))
+        x0 = model.add_variable(name="x0", vtype="C", lb=0.0, ub=10.0)
+        x1 = model.add_variable(name="x1", vtype="C", lb=0.0, ub=10.0)
 
-    # Add constraints: x0 + x1 >= 1.0 (Sense 1 for 'G', assuming MOI translates it in rust side)
-    # Wait, in model.rs `add_constraint` takes `vars, coeffs, lb, ub, name`.
-    # Let's inspect signature.
-    model.add_constraint(
-        vars=[v1, v2],
-        coeffs=[1.0, 1.0],
-        constant=0.0,
-        sense = ">",
-        rhs = 1.0,
-        name="c1"
-    )
+        self.assertEqual((x0, x1), (0, 1))
+        model.add_constraint(
+            vars=[x0, x1],
+            coeffs=[1.0, 1.0],
+            constant=0.0,
+            sense=">",
+            rhs=1.0,
+            name="demand",
+        )
+        model.set_objective(
+            vars=[x0, x1],
+            coeffs=[1.0, 1.0],
+            constant=0.0,
+            sense=0,
+        )
+        model.set_optimizer_attr("OutputFlag", 0)
+        model.update()
 
-    # Set objective: minimize x0 + x1, Sense: 1=Minimize, 0=Maximize? 
-    # Wait, check model.rs `set_objective` sense parameter.
-    model.set_objective(
-        vars=[v1, v2],
-        coeffs=[1.0, 1.0],
-        constant=0.0,
-        sense=0 # Assuming 0 is Min based on my previous rewrite?
-    )
-    
-    model.update()
-    model.set_optimizer_attr("OutputFlag", 0) # Suppress Gurobi output
-    
-    status = model.optimize()
-    
-    print("Status:", status)
-    
-    if status == 1: # GRB_OPTIMAL? Depends on mapping
-        val = model.get_objective_value()
-        assert val is not None
-        assert val >= 1.0
+        status = model.optimize()
+
+        self.assertEqual(status, 1)
+        self.assertAlmostEqual(model.get_objective_value(), 1.0, places=7)
+        self.assertAlmostEqual(
+            model.get_var_value(x0) + model.get_var_value(x1), 1.0, places=7
+        )
+
+    def test_invalid_parallel_array_lengths_are_rejected(self):
+        model = Model("low-level-invalid-input", str(GUROBI_DLL))
+        with self.assertRaises(ValueError):
+            model.add_constraint(
+                vars=[0, 1],
+                coeffs=[1.0],
+                constant=0.0,
+                sense="<",
+                rhs=1.0,
+            )
+
 
 if __name__ == "__main__":
-    test_basic_model_operations()
+    unittest.main()

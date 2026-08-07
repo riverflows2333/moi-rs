@@ -1,12 +1,11 @@
-use pyo3::prelude::*;
-use moi_core::*;
-use moi_solver_api::*;
-use crate::var::Var;
 use crate::constr::*;
-#[pyclass]
-#[derive(Clone,Debug)]
+use crate::var::Var;
+use moi_core::*;
+use pyo3::prelude::*;
+#[pyclass(from_py_object)]
+#[derive(Clone, Debug)]
 pub struct LinExpr {
-    f: ScalarAffineFn
+    f: ScalarAffineFn,
 }
 
 impl LinExpr {
@@ -20,7 +19,9 @@ impl LinExpr {
 
 impl Default for LinExpr {
     fn default() -> Self {
-        LinExpr { f: ScalarAffineFn::new() }
+        LinExpr {
+            f: ScalarAffineFn::new(),
+        }
     }
 }
 
@@ -30,7 +31,7 @@ impl LinExpr {
         let mut afn = self.f.clone();
         // 判断右侧项类型，为浮点数、变量或线性表达式
         if let Ok(value) = _other.extract::<f64>() {
-             afn = afn.calculate(&ScalarAffineFn::with_constant(value), OperationType::Add);
+            afn = afn.calculate(&ScalarAffineFn::with_constant(value), OperationType::Add);
         } else if let Ok(var) = _other.extract::<Var>() {
             afn.push_term(var.get_id(), 1.0);
         } else if let Ok(expr) = _other.extract::<LinExpr>() {
@@ -81,7 +82,6 @@ impl LinExpr {
         afn.simplify();
         LinExpr::new(afn)
     }
-
 
     fn __mul__(&self, _other: &Bound<'_, PyAny>) -> LinExpr {
         if let Ok(value) = _other.extract::<f64>() {

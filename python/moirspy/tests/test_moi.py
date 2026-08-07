@@ -1,10 +1,10 @@
-from moipy import MOI
+from moirspy import MOI
 from unittest import TestCase
 
 class TestMOI(TestCase):
     def test_moi_import(self):
         continuous = MOI.CONTINUOUS
-        print(continuous)
+        self.assertEqual(str(continuous), "VarType.CONTINUOUS")
 
 if __name__ == "__main__":
     import unittest

@@ -1,6 +1,6 @@
-use crate::{ScalarFunctionType};
+use crate::ScalarFunctionType;
+use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
-use bincode::{Encode, Decode};
 // 属性值枚举
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Encode, Decode)]
 pub enum AttrValue {
@@ -83,7 +83,7 @@ pub enum OptimizerAttr {
     SolverName,
     Silent,
     TimeLimit,
-    Raw(String)
+    Raw(String),
 }
 
 // 变量属性枚举
@@ -98,15 +98,50 @@ pub enum VariableAttr {
 pub enum ConstraintAttr {
     ConstraintName,
     ConstraintPrimal,
-    ConstraintDual
+    ConstraintDual,
 }
 
 // 求解状态
+#[repr(u32)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, Encode, Decode)]
 pub enum SolveStatus {
-    Unknown,
-    Optimal,
-    Infeasible,
-    Unbounded,
-    Feasible,
+    Unknown = 0,
+    Optimal = 1,
+    Infeasible = 2,
+    Unbounded = 3,
+    Feasible = 4,
+}
+
+impl SolveStatus {
+    pub const fn code(self) -> u32 {
+        self as u32
+    }
+
+    pub const fn from_code(code: u32) -> Self {
+        match code {
+            1 => Self::Optimal,
+            2 => Self::Infeasible,
+            3 => Self::Unbounded,
+            4 => Self::Feasible,
+            _ => Self::Unknown,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SolveStatus;
+
+    #[test]
+    fn solve_status_protocol_codes_are_stable() {
+        for status in [
+            SolveStatus::Unknown,
+            SolveStatus::Optimal,
+            SolveStatus::Infeasible,
+            SolveStatus::Unbounded,
+            SolveStatus::Feasible,
+        ] {
+            assert_eq!(SolveStatus::from_code(status.code()), status);
+        }
+    }
 }

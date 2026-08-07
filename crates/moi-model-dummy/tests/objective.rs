@@ -23,4 +23,3 @@ fn set_and_get_objective_via_attr() {
     //     panic!("objective attr missing or wrong type");
     // }
 }
-

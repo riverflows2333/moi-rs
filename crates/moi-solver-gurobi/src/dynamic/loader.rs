@@ -50,15 +50,12 @@ pub fn find_library_from(path: &String) -> Option<PathBuf> {
 }
 
 fn find_library_in_path(base_path: &Path) -> Option<(PathBuf, String)> {
-    let path_prefix = if cfg!(target_os = "windows") {
-        // NOTE: Gurobi求解器在windows当中会有一个win64的子目录，这里需要GUROBI_HOME指向到这个子目录
-        ""
-    } else if cfg!(target_os = "macos") {
-        ""
+    let lib_dir = if cfg!(target_os = "windows") {
+        // GUROBI_HOME should point to the win64 directory on Windows.
+        base_path.join("bin")
     } else {
-        ""
+        base_path.join("lib")
     };
-    let lib_dir = base_path.join(path_prefix).join("lib");
     if !lib_dir.exists() {
         return None;
     }
@@ -74,30 +71,27 @@ fn find_library_in_path(base_path: &Path) -> Option<(PathBuf, String)> {
     let entries = fs::read_dir(&lib_dir).ok()?;
     for entry in entries.flatten() {
         let path = entry.path();
-        if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
-            if file_name.contains("gurobi")
-                && file_name.ends_with(suffix)
-                && !file_name.contains("_light")
-            {
-                if let Some(version) = parse_version_from_filename(file_name) {
-                    return Some((path, version));
-                }
-            }
+        if let Some(file_name) = path.file_name().and_then(|n| n.to_str())
+            && file_name.to_ascii_lowercase().ends_with(suffix)
+            && let Some(version) = parse_version_from_filename(file_name)
+        {
+            return Some((path, version));
         }
     }
     None
 }
 
 fn parse_version_from_filename(filename: &str) -> Option<String> {
-    // format like libgurobi120.so or gurobi120.dll
-    // extract digits '120'
-    let digits: String = filename.chars().filter(|c| c.is_ascii_digit()).collect();
-    if digits.is_empty() {
-        return None;
-    }
-    // Simplistic: Use the digit string as the version identifier (e.g. "120")
-    // This matches the module name gen120
-    Some(digits)
+    let filename = filename.to_ascii_lowercase();
+    let stem = filename
+        .strip_suffix(".dll")
+        .or_else(|| filename.strip_suffix(".so"))
+        .or_else(|| filename.strip_suffix(".dylib"))?;
+    let version = stem
+        .strip_prefix("libgurobi")
+        .or_else(|| stem.strip_prefix("gurobi"))?;
+    (!version.is_empty() && version.chars().all(|c| c.is_ascii_digit()))
+        .then(|| version.to_string())
 }
 
 #[cfg(test)]
@@ -126,5 +120,7 @@ mod tests {
             parse_version_from_filename("libgurobi90.dylib"),
             Some("90".to_string())
         );
+        assert_eq!(parse_version_from_filename("Gurobi120.NET.dll"), None);
+        assert_eq!(parse_version_from_filename("gurobi120_light.dll"), None);
     }
 }

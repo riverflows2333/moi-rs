@@ -1,7 +1,12 @@
 from moirspy import MOI, Model, quicksum
 from unittest import TestCase
 import os
-os.environ["GUROBI_HOME"] = "/opt/gurobi1203"
+import sys
+
+if sys.platform == "win32":
+    os.environ.setdefault("GUROBI_HOME", r"D:\env\gurobi1203\win64")
+else:
+    os.environ.setdefault("GUROBI_HOME", "/opt/gurobi1203")
 class TestModel(TestCase):
     # def test_model_import(self):
     #     model = Model("test_model")

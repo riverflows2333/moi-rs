@@ -1,14 +1,14 @@
-use super::affine::ScalarAffineFn;
 use super::super::*;
+use super::affine::ScalarAffineFn;
+use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
-use bincode::{Encode, Decode};
-#[derive(Clone, Debug,PartialEq,Serialize, Deserialize, Encode, Decode)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Encode, Decode)]
 pub enum ScalarFunctionType {
     Affine(ScalarAffineFn),
     Variable(VarId),
 }
 
-#[derive(Clone, Debug,PartialEq,Serialize,Deserialize,Encode,Decode)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Encode, Decode)]
 pub enum OperationType {
     Add,
     Sub,

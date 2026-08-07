@@ -7,8 +7,8 @@ use moi_bridge::BridgeOptimizer;
 use moi_core::*;
 use moi_solver_api::*;
 use pyo3::prelude::*;
-use pyo3::types::{PyAny, PyDict, PyTuple};
-use std::sync::{Arc, RwLock};
+use pyo3::types::{PyAny, PyTuple};
+use std::sync::{Arc, Mutex};
 #[pyclass]
 pub struct Model {
     name: String,
@@ -22,7 +22,7 @@ impl Model {
     fn new(name: String) -> Self {
         Model {
             name,
-            model: Arc::new(RwLock::new(BridgeOptimizer::new())),
+            model: Arc::new(Mutex::new(BridgeOptimizer::new())),
             backend: None,
         }
     }
@@ -36,20 +36,23 @@ impl Model {
         vtype: Option<VarType>,
         name: &str,
     ) -> PyResult<Var> {
-        let mut model = self.model.write().unwrap();
-        let var_id = model.add_variable(
-            Some(&name),
-            vtype.map(|t| match t {
-                VarType::CONTINUOUS => 'C',
-                VarType::BINARY => 'B',
-                VarType::INTEGER => 'I',
-            }),
-            Some(lb),
-            Some(ub),
-        );
+        let _ = obj;
+        let mut model = self.model.lock().unwrap();
+        let var_id = model
+            .add_variable(
+                Some(name),
+                vtype.map(|t| match t {
+                    VarType::CONTINUOUS => 'C',
+                    VarType::BINARY => 'B',
+                    VarType::INTEGER => 'I',
+                }),
+                Some(lb),
+                Some(ub),
+            )
+            .map_err(to_py_runtime_error)?;
         let mut var = Var::new(var_id.0);
         var.set_bridge(&self.model);
-        Ok(Var::new(var_id.0))
+        Ok(var)
     }
     #[pyo3(signature = (*indices, lb=None, ub=None, obj=None, vtype=None, name=None),name="addVars")]
     fn add_vars<'py>(
@@ -92,25 +95,27 @@ impl Model {
         } else {
             name_param
         };
-        let mut model = self.model.write().unwrap();
-        let varids = model.add_variables(
-            num_vars,
-            Some(NameType::Vector(name_param.to_vec(Some(num_vars)))),
-            Some(
-                vtype_param
-                    .to_vec(Some(num_vars))
-                    .iter()
-                    .map(|t| match t {
-                        VarType::CONTINUOUS => 'C',
-                        VarType::BINARY => 'B',
-                        VarType::INTEGER => 'I',
-                    })
-                    .collect(),
-            ),
-            Some(BoundType::Vector(lb_param.to_vec(Some(num_vars)))),
-            Some(BoundType::Vector(ub_param.to_vec(Some(num_vars)))),
-        );
-        let var_ids = varids.into_iter().map(|id| VarId(id.0)).collect();
+        let mut model = self.model.lock().unwrap();
+        let varids = model
+            .add_variables(
+                num_vars,
+                Some(NameType::Vector(name_param.to_vec(Some(num_vars)))),
+                Some(
+                    vtype_param
+                        .to_vec(Some(num_vars))
+                        .iter()
+                        .map(|t| match t {
+                            VarType::CONTINUOUS => 'C',
+                            VarType::BINARY => 'B',
+                            VarType::INTEGER => 'I',
+                        })
+                        .collect(),
+                ),
+                Some(BoundType::Vector(lb_param.to_vec(Some(num_vars)))),
+                Some(BoundType::Vector(ub_param.to_vec(Some(num_vars)))),
+            )
+            .map_err(to_py_runtime_error)?;
+        let var_ids = varids;
         let mut vars = Vars::new(shape_vec.clone(), var_ids);
         vars.set_bridge(&self.model);
         Ok(vars)
@@ -120,8 +125,10 @@ impl Model {
     fn add_constr(&mut self, constr: &Bound<'_, Constr>, name: Option<&str>) -> PyResult<()> {
         let constr: Constr = constr.extract()?;
 
-        let mut model = self.model.write().unwrap();
-        model.add_constraint(constr.get_f(), constr.get_s(), name.map(|s| s.to_string()));
+        let mut model = self.model.lock().unwrap();
+        model
+            .add_constraint(constr.get_f(), constr.get_s(), name.map(str::to_string))
+            .map_err(to_py_runtime_error)?;
         Ok(())
     }
     #[pyo3(signature = (generator, name=None),name="addConstrs")]
@@ -156,46 +163,46 @@ impl Model {
             name_param
         };
 
-        let mut model = self.model.write().unwrap();
-        model.add_constraints(fs, ss, Some(name_param.to_vec(Some(count))));
+        let mut model = self.model.lock().unwrap();
+        model
+            .add_constraints(fs, ss, Some(name_param.to_vec(Some(count))))
+            .map_err(to_py_runtime_error)?;
         Ok(())
     }
     #[pyo3(signature = (expr, sense),name="setObjective")]
     fn set_objective(&mut self, expr: &Bound<'_, PyAny>, sense: Sense) -> PyResult<()> {
         let obj_expr = expr.extract::<LinExpr>()?;
-        let mut model = self.model.write().unwrap();
-        let _ = model.set_model_attr(
-            ModelAttr::ObjectiveFunction,
-            AttrValue::ScalarFn(ScalarFunctionType::Affine(obj_expr.get_fn())),
-        );
-        let _ = model.set_model_attr(
-            ModelAttr::ObjectiveSense,
-            AttrValue::ModelSense(match sense {
-                Sense::MINIMIZE => ModelSense::Minimize,
-                Sense::MAXIMIZE => ModelSense::Maximize,
-            }),
-        );
+        let mut model = self.model.lock().unwrap();
+        model
+            .set_objective(
+                ScalarFunctionType::Affine(obj_expr.get_fn()),
+                match sense {
+                    Sense::MINIMIZE => ModelSense::Minimize,
+                    Sense::MAXIMIZE => ModelSense::Maximize,
+                },
+            )
+            .map_err(to_py_runtime_error)?;
         Ok(())
     }
 
     #[pyo3(name = "setParam")]
     fn set_param(&mut self, paramname: &str, newvalue: &Bound<'_, PyAny>) -> PyResult<()> {
         let attr = OptimizerAttr::Raw(paramname.to_string());
-        let val = if let Ok(v) = newvalue.extract::<i64>() {
+        let val = if let Ok(v) = newvalue.extract::<bool>() {
+            AttrValue::Bool(v)
+        } else if let Ok(v) = newvalue.extract::<i64>() {
             AttrValue::Int(v)
         } else if let Ok(v) = newvalue.extract::<f64>() {
             AttrValue::Float(v)
         } else if let Ok(v) = newvalue.extract::<String>() {
             AttrValue::String(v)
-        } else if let Ok(v) = newvalue.extract::<bool>() {
-            AttrValue::Bool(v)
         } else {
             return Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(
                 "Unsupported attribute value type".to_string(),
             ));
         };
 
-        let mut model = self.model.write().unwrap();
+        let mut model = self.model.lock().unwrap();
         model.set_optimizer_attr(attr, val).map_err(|e| {
             PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
                 "Failed to set optimizer attr: {:?}",
@@ -207,25 +214,33 @@ impl Model {
 
     // 选择求解器后端
     #[pyo3(name = "setBackend")]
-    fn set_backend(&mut self, py: Python, backend: &str) {
-        let model_instance = py.import(&format!("moirspy_{}", backend))
+    fn set_backend(&mut self, py: Python, backend: &str) -> PyResult<()> {
+        let model_instance = py
+            .import(&format!("moirspy_{backend}"))
             .and_then(|module| module.getattr("Model"))
-            .and_then(|model_class| model_class.call1((Some(self.name.to_string()), None::<String>)))
-            .expect(&format!("Failed to set backend to '{}'. Please ensure the corresponding module is available.", backend));
+            .and_then(|model_class| {
+                model_class.call1((Some(self.name.to_string()), None::<String>))
+            })
+            .map_err(|error| {
+                PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+                    "Failed to initialize backend '{backend}': {error}"
+                ))
+            })?;
 
         use crate::py_backend::PyBackend;
         let py_backend = Box::new(PyBackend::new(model_instance.clone().into()));
 
-        let mut bridge = self.model.write().unwrap();
+        let mut bridge = self.model.lock().unwrap();
         bridge
             .attach_backend(py_backend)
-            .expect("Failed to sync bridge optimizer to Python backend");
+            .map_err(to_py_runtime_error)?;
 
         self.backend = Some(model_instance.into());
+        Ok(())
     }
     // 调用底层求解器进行优化
     fn optimize(&mut self, _py: Python) -> PyResult<()> {
-        let mut bridge = self.model.write().unwrap();
+        let mut bridge = self.model.lock().unwrap();
         match bridge.optimize() {
             Ok(_) => Ok(()),
             Err(e) => Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
@@ -240,7 +255,11 @@ impl Model {
     #[getter]
     #[pyo3(name = "ObjVal")]
     pub fn get_objval(&self) -> PyResult<Option<f64>> {
-        let bridge = self.model.read().unwrap();
+        let bridge = self.model.lock().unwrap();
         Ok(bridge.get_objective_value())
     }
+}
+
+fn to_py_runtime_error(error: MoiError) -> PyErr {
+    PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(error.to_string())
 }

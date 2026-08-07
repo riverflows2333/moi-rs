@@ -1,5 +1,4 @@
-use moi_solver_gurobi::{dynamic::find_library_from, *};
-use pyo3::prelude::*;
+use moi_solver_gurobi::dynamic::find_library_from;
 
 // gurobi动态库文件类型，优先级从上到下
 #[derive(Clone, Debug)]
@@ -45,12 +44,16 @@ pub fn load_gurobi(gurobi_path: Option<String>) -> Result<EnvLoader, String> {
 pub fn loader_to_dll_path(loader: &EnvLoader) -> Result<String, String> {
     match loader {
         // gurobi 12版本之后，gurobipy当中的动态库被拆分为几部分，难以直接调用
-        EnvLoader::PyEnv(_) => Err("Cannot determine Gurobi library path from Python environment".to_string()),
+        EnvLoader::PyEnv(_) => {
+            Err("Cannot determine Gurobi library path from Python environment".to_string())
+        }
         // 基于环境变量读取库文件路径
         EnvLoader::EnvVar(gurobi_home) => {
             let path = find_library_from(&gurobi_home);
             if let Some(path) = path {
-                Ok(path.to_str().unwrap().to_string())
+                path.to_str()
+                    .map(str::to_string)
+                    .ok_or_else(|| "Gurobi library path is not valid UTF-8".to_string())
             } else {
                 Err(format!(
                     "Gurobi library not found at expected path: {}",

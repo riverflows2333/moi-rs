@@ -2,7 +2,7 @@
 
 use pyo3::prelude::*;
 
-#[pyclass(eq, eq_int)]
+#[pyclass(eq, eq_int, from_py_object)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum VarType {
     CONTINUOUS = 0,
@@ -10,7 +10,7 @@ pub enum VarType {
     INTEGER = 2,
 }
 
-#[pyclass(eq, eq_int)]
+#[pyclass(eq, eq_int, from_py_object)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Sense {
     MINIMIZE = 0,

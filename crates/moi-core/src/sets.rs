@@ -1,6 +1,6 @@
 // Rework: introduce a unified SetType enum while keeping concrete structs
+use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
-use bincode::{Encode, Decode};
 #[derive(Clone, Debug, Serialize, Deserialize, Encode, Decode)]
 pub enum ScalarSetType {
     GreaterThan(f64),
