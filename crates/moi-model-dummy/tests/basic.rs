@@ -1,33 +1,60 @@
-use moi_core::attributes::{ModelAttr, ModelSense};
-use moi_core::functions::{ScalarAffineFn, ScalarFunctionType};
-use moi_core::sets::ScalarSetType;
+use moi_core::{AttrValue, ModelAttr, MoiError, OptimizerAttr, SolveStatus, VarId};
 use moi_model_dummy::DummyModel;
-use moi_solver_api::{ModelLike, Optimizer, SolveStatus};
+use moi_solver_api::{ModelLike, Optimizer};
 
 #[test]
-fn test_supports_affine_scalar_bounds() {
-    let model = DummyModel::default();
-    let f = ScalarFunctionType::Affine(ScalarAffineFn::default());
-    let s = ScalarSetType::GreaterThan(0.0);
-    // assert!(model.supports_constraint(&f, &s));
+fn derived_attributes_and_default_status_are_honest() {
+    let mut model = DummyModel::default();
+    model
+        .set_model_attr(ModelAttr::ModelName, AttrValue::String("recording".into()))
+        .unwrap();
+
+    assert_eq!(
+        model.get_model_attr(ModelAttr::ModelName),
+        Some(AttrValue::String("recording".into()))
+    );
+    assert_eq!(
+        model.get_optimizer_attr(OptimizerAttr::SolverName),
+        Some(AttrValue::String("DummyRecordingOptimizer".into()))
+    );
+    assert_eq!(model.optimize().unwrap(), SolveStatus::Unknown);
+    assert_eq!(model.get_var_value(VarId(0)), None);
+    assert_eq!(model.get_objective_value(), None);
+    assert_eq!(
+        model.get_model_attr(ModelAttr::TerminationStatus),
+        Some(AttrValue::Status(SolveStatus::Unknown))
+    );
+    assert_eq!(
+        model.get_model_attr(ModelAttr::ResultCount),
+        Some(AttrValue::Usize(0))
+    );
 }
 
 #[test]
-fn test_set_get_attribute() {
-    let mut model = DummyModel::default();
-    // model
-    //     .set_model_attr(ModelAttr::ObjectiveSense, ModelSense::Minimize.into())
-    //     .unwrap();
-    // let got = model.get_model_attr(ModelAttr::ObjectiveSense).unwrap();
-    // assert!(matches!(
-    //     got,
-    //     moi_core::attributes::AttrValue::ModelSense(ModelSense::Minimize)
-    // ));
+fn configured_solution_is_visible_only_after_optimize() {
+    let (mut model, handle) = DummyModel::new();
+    let variable = model
+        .add_variable(Some("x"), Some('C'), Some(0.0), Some(10.0))
+        .unwrap();
+    handle
+        .set_solution(SolveStatus::Optimal, Some(6.0), [(variable, 3.0)])
+        .unwrap();
+
+    assert_eq!(model.get_var_value(variable), None);
+    assert_eq!(model.optimize().unwrap(), SolveStatus::Optimal);
+    assert_eq!(model.get_var_value(variable), Some(3.0));
+    assert_eq!(model.get_objective_value(), Some(6.0));
+    assert_eq!(
+        model.get_model_attr(ModelAttr::ResultCount),
+        Some(AttrValue::Usize(1))
+    );
 }
 
 #[test]
-fn test_optimize_dummy() {
+fn derived_attributes_are_read_only() {
     let mut model = DummyModel::default();
-    let status = model.optimize().unwrap();
-    assert_eq!(status, SolveStatus::Optimal);
+    let error = model
+        .set_model_attr(ModelAttr::NumberOfVariables, AttrValue::Usize(10))
+        .unwrap_err();
+    assert!(matches!(error, MoiError::SetAttributeNotAllowed));
 }

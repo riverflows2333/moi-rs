@@ -1,25 +1,40 @@
-use moi_core::attributes::{AttrValue, ModelAttr};
-use moi_core::functions::ScalarAffineFn;
-use moi_model_dummy::DummyModel;
-use moi_solver_api::{ModelLike, Optimizer};
+use moi_core::{AttrValue, ModelAttr, ModelSense, ScalarAffineFn, ScalarFunctionType};
+use moi_model_dummy::{DummyModel, RecordedCall};
+use moi_solver_api::ModelLike;
 
 #[test]
-fn set_and_get_objective_via_attr() {
-    let mut m = DummyModel::default();
-    let v = m.add_variable(None);
-    let mut obj = ScalarAffineFn::default();
-    obj.push_term(v, 3.0);
-    obj.push_term(v, 2.0); // will simplify to 5.0
-    // m.set_model_attr(ModelAttr::ObjectiveFunction, obj.into())
-    //     .unwrap();
-    // if let Some(got) = m.get_model_attr(ModelAttr::ObjectiveFunction) {
-    //     let got = match got {
-    //         AttrValue::ScalarAffineFn(f) => f,
-    //         _ => panic!("wrong attribute type"),
-    //     };
-    //     assert_eq!(got.terms.len(), 1);
-    //     assert_eq!(got.terms[0].coeff, 5.0);
-    // } else {
-    //     panic!("objective attr missing or wrong type");
-    // }
+fn objective_is_available_through_attributes_and_recording() {
+    let (mut model, handle) = DummyModel::new();
+    let variable = model.add_variable(Some("x"), None, None, None).unwrap();
+    let mut objective = ScalarAffineFn::default();
+    objective.push_term(variable, 5.0);
+
+    model
+        .set_model_attr(
+            ModelAttr::ObjectiveFunction,
+            AttrValue::ScalarFn(ScalarFunctionType::Affine(objective.clone())),
+        )
+        .unwrap();
+    model
+        .set_model_attr(
+            ModelAttr::ObjectiveSense,
+            AttrValue::ModelSense(ModelSense::Maximize),
+        )
+        .unwrap();
+
+    assert_eq!(
+        model.get_model_attr(ModelAttr::ObjectiveFunction),
+        Some(AttrValue::ScalarFn(ScalarFunctionType::Affine(objective)))
+    );
+    assert_eq!(
+        model.get_model_attr(ModelAttr::ObjectiveSense),
+        Some(AttrValue::ModelSense(ModelSense::Maximize))
+    );
+    assert!(matches!(
+        handle.snapshot().unwrap().calls.last(),
+        Some(RecordedCall::SetObjective {
+            sense: ModelSense::Maximize,
+            ..
+        })
+    ));
 }
