@@ -212,7 +212,7 @@ impl Var {
 impl Vars {
     #[new]
     fn new_py(shape: Vec<usize>, ids: Vec<usize>) -> Self {
-        let var_ids: Vec<VarId> = ids.into_iter().map(|id| VarId(id)).collect();
+        let var_ids: Vec<VarId> = ids.into_iter().map(VarId).collect();
         Vars {
             shape,
             var_ids,

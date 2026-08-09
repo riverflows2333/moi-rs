@@ -27,7 +27,7 @@ impl Model {
         }
     }
 
-    #[pyo3(signature = (lb=0., ub=std::f64::INFINITY, obj=0.0, vtype=None, name=""),name="addVar")]
+    #[pyo3(signature = (lb=0., ub=f64::INFINITY, obj=0.0, vtype=None, name=""),name="addVar")]
     fn add_var(
         &mut self,
         lb: f64,
@@ -68,24 +68,24 @@ impl Model {
 
         let num_vars = shape_vec.iter().product();
         let lb_param = lb
-            .map(|obj| Param::from_py(obj))
+            .map(Param::from_py)
             .transpose()?
             .unwrap_or(Param::Vector(vec![0.0; num_vars]));
         let ub_param = ub
-            .map(|obj| Param::from_py(obj))
+            .map(Param::from_py)
             .transpose()?
             .unwrap_or(Param::Vector(vec![f64::INFINITY; num_vars]));
         // TODO：目前暂不实现添加目标函数当中的参数，后续可以考虑添加一个专门的接口来设置目标函数参数
         let _ = obj
-            .map(|obj| Param::from_py(obj))
+            .map(Param::from_py)
             .transpose()?
             .unwrap_or(Param::Vector(vec![0.0; num_vars]));
         let vtype_param = vtype
-            .map(|obj| Param::from_py(obj))
+            .map(Param::from_py)
             .transpose()?
             .unwrap_or(Param::Vector(vec![VarType::CONTINUOUS; num_vars]));
         let name_param = name
-            .map(|obj| Param::from_py(obj))
+            .map(Param::from_py)
             .transpose()?
             .unwrap_or(Param::Scalar("".to_string()));
         // 如果传入参数为单一字符串，则按照shape生成a[0],a[1]或a[0,0],a[0,1]等变量名称
@@ -152,7 +152,7 @@ impl Model {
             .collect::<PyResult<Vec<_>>>()?;
         let shape_vec = vec![count];
         let name_param = name
-            .map(|obj| Param::from_py(obj))
+            .map(Param::from_py)
             .transpose()?
             .unwrap_or(Param::Scalar("Cons".to_string()));
         // 如果传入参数为单一字符串，则按照shape生成a[0],a[1]或a[0,0],a[0,1]等约束名称
@@ -217,7 +217,7 @@ impl Model {
     #[pyo3(signature = (backend, env=None))]
     fn set_backend(&mut self, py: Python, backend: &str, env: Option<Py<PyAny>>) -> PyResult<()> {
         let model_instance = py
-            .import(&format!("moirspy_{backend}"))
+            .import(format!("moirspy_{backend}"))
             .and_then(|module| module.getattr("Model"))
             .and_then(|model_class| match env {
                 Some(env) => model_class.call1((Some(self.name.to_string()), None::<String>, env)),
