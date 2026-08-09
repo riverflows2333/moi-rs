@@ -1,26 +1,27 @@
-use moi_core::attributes::ModelAttr;
-use moi_solver_api::ModelLike;
+use moi_core::{ModelSense, ScalarAffineFn, ScalarFunctionType, ScalarSetType};
+use moi_model_dummy::DummyModel;
+use moi_solver_api::{ModelLike, Optimizer};
 
-fn main() {
-    let mut model = moi_model_dummy::DummyModel::default();
-    let vars = model.add_variables(2, None);
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let (mut model, handle) = DummyModel::new();
+    let x = model.add_variable(Some("x"), None, Some(0.0), None)?;
+    let y = model.add_variable(Some("y"), None, Some(0.0), None)?;
 
-    let mut f = moi_core::functions::ScalarAffineFn::default();
-    f.push_term(vars[0], 1.0);
-    f.push_term(vars[1], 2.0);
+    let mut demand = ScalarAffineFn::default();
+    demand.push_term(x, 1.0);
+    demand.push_term(y, 1.0);
+    model.add_constraint(
+        ScalarFunctionType::Affine(demand),
+        ScalarSetType::GreaterThan(1.0),
+        Some("demand".into()),
+    )?;
 
-    let _cid = model.add_constraint(
-        moi_core::functions::ScalarFunctionType::Affine(f),
-        moi_core::sets::ScalarSetType::GreaterThan(1.0),
-    );
+    let mut objective = ScalarAffineFn::default();
+    objective.push_term(x, 1.0);
+    objective.push_term(y, 2.0);
+    model.set_objective(ScalarFunctionType::Affine(objective), ModelSense::Minimize)?;
 
-    // set objective via attribute: minimize x + 2y
-    let mut obj = moi_core::functions::ScalarAffineFn::default();
-    obj.push_term(vars[0], 3.0);
-    obj.push_term(vars[1], 5.0);
-    // model.set_model_attr(ModelAttr::ObjectiveFunction, obj.into()).unwrap();
-
-    println!("example constructed OK");
-    // let ret = model.get_model_attr(ModelAttr::ObjectiveFunction);
-    // println!("Objective function: {:?}", ret);
+    println!("status without a real solver: {:?}", model.optimize()?);
+    println!("recorded calls: {:#?}", handle.snapshot()?.calls);
+    Ok(())
 }
