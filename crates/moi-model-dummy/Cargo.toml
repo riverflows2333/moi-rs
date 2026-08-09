@@ -9,3 +9,6 @@ license.workspace = true
 [dependencies]
 moi-core.workspace = true
 moi-solver-api.workspace = true
+
+[dev-dependencies]
+moi-bridge.workspace = true
