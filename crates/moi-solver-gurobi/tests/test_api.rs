@@ -24,7 +24,7 @@ fn test_api_mip() {
         ret = (api.GRBnewmodel)(
             env,
             &mut model as *mut *mut c_void,
-            b"test_model\0".as_ptr() as *const c_char,
+            c"test_model".as_ptr(),
             0,
             null(),
             null(),
