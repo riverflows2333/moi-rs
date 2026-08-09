@@ -58,9 +58,9 @@ print("objective:", model.ObjVal)
 print("x:", [x[i].X for i in range(3)])
 ```
 
-Build the complete model before calling `setBackend`; the bridge synchronizes
-variables, constraints, the objective, and parameters when the backend is
-attached.
+The bridge synchronizes existing variables, constraints, the objective, and
+parameters when the backend is attached. Later model changes are forwarded to
+the attached backend incrementally.
 
 ## Main API
 
@@ -71,7 +71,9 @@ attached.
 - `quicksum(...)` sums any iterable of variables, linear expressions, or numbers.
 - `Model.setObjective(expr, MOI.MINIMIZE | MOI.MAXIMIZE)` sets the objective.
 - `Model.setParam(name, value)` stores a solver parameter.
-- `Model.setBackend("gurobi")` attaches the installed `moirspy-gurobi` backend.
+- `Model.setBackend("gurobi", env=None)` attaches the installed
+  `moirspy-gurobi` backend and optionally forwards an explicit solver
+  environment.
 - `Model.optimize()` solves the model; use `Model.ObjVal` and `Var.X` for results.
 
 Available variable types are `MOI.CONTINUOUS`, `MOI.BINARY`, and `MOI.INTEGER`.

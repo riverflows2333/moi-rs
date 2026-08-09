@@ -59,8 +59,8 @@ model.optimize()
 print(model.ObjVal)
 ```
 
-Build the complete model before attaching the backend with
-`setBackend("gurobi")`.
+Existing model data is synchronized when `setBackend("gurobi")` is called;
+later changes are forwarded incrementally.
 
 ## Low-level API
 
@@ -95,6 +95,17 @@ env.setParam("Threads", 4)
 
 model_a = Model("a", env=env)
 model_b = Model("b", env=env)
+```
+
+The same environment can be passed through the high-level modeling API:
+
+```python
+from moirspy import Model
+from moirspy_gurobi import Env
+
+env = Env()
+model = Model("high-level")
+model.setBackend("gurobi", env=env)
 ```
 
 Connection and licensing parameters that must be configured before startup use

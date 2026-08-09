@@ -75,9 +75,9 @@ print("objective:", model.ObjVal)
 print("x:", [x[i].X for i in range(3)])
 ```
 
-`setBackend("gurobi")` dynamically imports `moirspy_gurobi`. Build the complete
-model before attaching the backend; the current bridge synchronizes the model
-when the backend is attached.
+`setBackend("gurobi")` dynamically imports `moirspy_gurobi`. Existing model
+data is synchronized when the backend is attached, and subsequent variables,
+constraints, objectives, and parameters are forwarded incrementally.
 
 ## Modeling API
 
@@ -139,6 +139,17 @@ yet.
 `setParam(name, value)` accepts a Boolean, integer, float, or string. With the
 Gurobi backend, raw Gurobi parameter names such as `OutputFlag`, `TimeLimit`, and
 `MIPGap` are forwarded to the native solver.
+
+An explicit Gurobi environment can be imported from the solver package and
+passed through the generic backend boundary:
+
+```python
+from moirspy_gurobi import Env
+
+env = Env()
+env.setParam("OutputFlag", 0)
+model.setBackend("gurobi", env=env)
+```
 
 After `optimize()`, `model.ObjVal` is the objective value and `variable.X` is the
 variable value. Either property returns `None` if its result is unavailable.
