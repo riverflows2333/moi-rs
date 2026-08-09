@@ -1,4 +1,5 @@
 use std::env;
+use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -9,15 +10,15 @@ pub struct GurobiVersion {
     pub technical: u32, // often 0 in filename
 }
 
-impl ToString for GurobiVersion {
-    fn to_string(&self) -> String {
-        format!("{}{}", self.major, self.minor)
+impl fmt::Display for GurobiVersion {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{}{}", self.major, self.minor)
     }
 }
 
 pub fn find_library() -> Option<(PathBuf, String)> {
     // Check environment variable first
-    if let Some(path_str) = env::var("GUROBI_HOME").ok() {
+    if let Ok(path_str) = env::var("GUROBI_HOME") {
         let path = PathBuf::from(path_str);
         if let Some((lib_path, version)) = find_library_in_path(&path) {
             return Some((lib_path, version));
