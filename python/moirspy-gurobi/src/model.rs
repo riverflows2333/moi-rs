@@ -60,9 +60,9 @@ impl Model {
         lbs: Option<Vec<f64>>,
         ubs: Option<Vec<f64>>,
     ) -> PyResult<Vec<usize>> {
-        let names_arg = names.map(|v| NameType::Vector(v));
-        let lbs_arg = lbs.map(|v| BoundType::Vector(v));
-        let ubs_arg = ubs.map(|v| BoundType::Vector(v));
+        let names_arg = names.map(NameType::Vector);
+        let lbs_arg = lbs.map(BoundType::Vector);
+        let ubs_arg = ubs.map(BoundType::Vector);
         let ids = self
             .optimizer
             .add_variables(n, names_arg, vtypes, lbs_arg, ubs_arg)
@@ -150,7 +150,7 @@ impl Model {
         }
         let ss = senses
             .into_iter()
-            .zip(rhss.into_iter())
+            .zip(rhss)
             .map(|(sense, rhs)| match sense {
                 '<' => Ok(ScalarSetType::LessThan(rhs)),
                 '>' => Ok(ScalarSetType::GreaterThan(rhs)),

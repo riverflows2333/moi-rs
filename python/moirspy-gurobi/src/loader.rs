@@ -22,10 +22,10 @@ pub fn load_gurobi(gurobi_path: Option<String>) -> Result<EnvLoader, String> {
         return Ok(EnvLoader::EnvVar(gurobi_home));
     }
     // 3. 从指定路径加载
-    if let Some(path) = gurobi_path {
-        if std::path::Path::new(&path).exists() {
-            return Ok(EnvLoader::LibPath(path));
-        }
+    if let Some(path) = gurobi_path
+        && std::path::Path::new(&path).exists()
+    {
+        return Ok(EnvLoader::LibPath(path));
     }
     // 4. 从其他路径加载
     let possible_paths = vec![
@@ -49,7 +49,7 @@ pub fn loader_to_dll_path(loader: &EnvLoader) -> Result<String, String> {
         }
         // 基于环境变量读取库文件路径
         EnvLoader::EnvVar(gurobi_home) => {
-            let path = find_library_from(&gurobi_home);
+            let path = find_library_from(gurobi_home);
             if let Some(path) = path {
                 path.to_str()
                     .map(str::to_string)
