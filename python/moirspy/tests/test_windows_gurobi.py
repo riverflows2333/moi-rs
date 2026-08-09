@@ -104,6 +104,17 @@ class WindowsGurobiModelTests(unittest.TestCase):
         self.assertIsNone(model.ObjVal)
         self.assertIsNone(x.X)
 
+    def test_unbounded_model_has_no_solution_values(self):
+        model = self.new_model("windows-unbounded")
+        x = model.addVar(lb=0.0, name="x")
+        model.setObjective(1.0 * x, MOI.MAXIMIZE)
+
+        model.setBackend("gurobi")
+        model.optimize()
+
+        self.assertIsNone(model.ObjVal)
+        self.assertIsNone(x.X)
+
     def test_invalid_vector_lengths_fail_before_backend_attach(self):
         model = self.new_model("windows-invalid-input")
         with self.assertRaises(RuntimeError):
