@@ -42,9 +42,16 @@ pub fn scalar_function_to_grb(
 }
 
 // 通过ConstraintInfo构建Gurobi格式
-pub fn build_constr_matrix(
-    constraints: &Vec<ConstrInfo>,
-) -> Result<(Vec<u32>, Vec<u32>, Vec<f64>, Vec<u8>, Vec<f64>, Vec<String>), MoiError> {
+pub struct GrbConstraintMatrix {
+    pub starts: Vec<u32>,
+    pub indices: Vec<u32>,
+    pub coefficients: Vec<f64>,
+    pub senses: Vec<u8>,
+    pub rhs: Vec<f64>,
+    pub names: Vec<String>,
+}
+
+pub fn build_constr_matrix(constraints: &[ConstrInfo]) -> Result<GrbConstraintMatrix, MoiError> {
     let mut cbeg = Vec::new();
     let mut cind = Vec::new();
     let mut cval = Vec::new();
@@ -60,5 +67,12 @@ pub fn build_constr_matrix(
         sense.push(s);
         rhs.push(r);
     }
-    Ok((cbeg, cind, cval, sense, rhs, names))
+    Ok(GrbConstraintMatrix {
+        starts: cbeg,
+        indices: cind,
+        coefficients: cval,
+        senses: sense,
+        rhs,
+        names,
+    })
 }
