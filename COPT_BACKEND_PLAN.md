@@ -378,7 +378,7 @@ model.optimize()
 
 - [x] 在 workspace dependencies 增加 `moi-solver-copt`。
 - [x] 创建两个 crate 和空模块结构。
-- [ ] 从 COPT 8.0.6 `copt.h` 生成/核对最小 bindings。
+- [x] 从 COPT 8.0.6 `copt.h` 生成/核对最小 bindings。
 - [x] 两个 crate 在没有 COPT 安装时也能 `cargo check`。
 
 验收：`cargo check --workspace --all-targets`。
@@ -387,9 +387,9 @@ model.optimize()
 
 - [x] 实现跨平台 loader 和精确库名过滤。
 - [x] 加载最小 `CoptApi` 函数表。
-- [ ] 实现 `CoptEnv`、`SharedCoptEnv` 和 `CoptOptimizer` 构造/析构。
+- [x] 实现 `CoptEnv`、`SharedCoptEnv` 和 `CoptOptimizer` 构造/析构。
 - [x] 用 `COPT_GetBanner` 做动态库 smoke test。
-- [ ] 所有创建失败路径释放已创建资源。
+- [x] 所有创建失败路径释放已创建资源。
 
 验收：无安装时 loader 单测通过；有安装/许可证时 env/prob smoke test 通过。
 

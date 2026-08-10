@@ -1,12 +1,19 @@
-use moi_solver_copt::{CoptApi, bindings, find_library};
+use moi_solver_copt::{CoptApi, CoptEnv, CoptOptimizer, bindings, find_library};
 use std::ffi::{CStr, c_char};
+use std::sync::{Arc, Mutex};
+
+fn configured_api() -> Option<Arc<CoptApi>> {
+    let path = find_library()?;
+    Some(Arc::new(CoptApi::new(path).expect(
+        "configured COPT library should expose the MILP API",
+    )))
+}
 
 #[test]
 fn configured_library_loads_minimum_api_and_returns_banner() {
-    let Some(path) = find_library() else {
+    let Some(api) = configured_api() else {
         return;
     };
-    let api = CoptApi::new(path).expect("configured COPT library should expose the MILP API");
     let mut buffer = vec![0 as c_char; bindings::COPT_BUFFSIZE as usize];
 
     // SAFETY: `buffer` is writable for the declared length and the loaded
@@ -33,4 +40,57 @@ fn configured_library_loads_minimum_api_and_returns_banner() {
         banner.contains("Cardinal Optimizer") && banner.contains(&expected_version),
         "unexpected COPT banner: {banner}"
     );
+}
+
+#[test]
+fn default_environment_and_problem_lifecycle() {
+    let Some(api) = configured_api() else {
+        return;
+    };
+    let env = Arc::new(Mutex::new(
+        CoptEnv::new(api).expect("default COPT environment should be created"),
+    ));
+    let optimizer = CoptOptimizer::new(env.clone()).expect("COPT problem should be created");
+
+    assert_eq!(optimizer.num_variables(), 0);
+    assert_eq!(optimizer.num_constraints(), 0);
+    assert_eq!(Arc::strong_count(&env), 2);
+
+    drop(optimizer);
+    assert_eq!(Arc::strong_count(&env), 1);
+}
+
+#[test]
+fn explicit_license_directory_creates_environment() {
+    let Some(api) = configured_api() else {
+        return;
+    };
+    let Some(license_dir) = std::env::var_os("COPT_LICENSE_DIR") else {
+        return;
+    };
+    let license_dir = license_dir
+        .to_str()
+        .expect("COPT_LICENSE_DIR should be valid UTF-8");
+
+    let env = CoptEnv::with_license_dir(api, license_dir)
+        .expect("explicit COPT license directory should create an environment");
+    drop(env);
+}
+
+#[test]
+fn shared_environment_supports_multiple_problems() {
+    let Some(api) = configured_api() else {
+        return;
+    };
+    let env = Arc::new(Mutex::new(
+        CoptEnv::new(api).expect("default COPT environment should be created"),
+    ));
+
+    let first = CoptOptimizer::new(env.clone()).expect("first COPT problem should be created");
+    let second = CoptOptimizer::new(env.clone()).expect("second COPT problem should be created");
+    assert_eq!(Arc::strong_count(&env), 3);
+
+    drop(first);
+    drop(second);
+    assert_eq!(Arc::strong_count(&env), 1);
 }
