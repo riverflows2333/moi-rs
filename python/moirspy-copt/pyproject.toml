@@ -1,0 +1,20 @@
+[build-system]
+requires = ["maturin>=1.11,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "moirspy-copt"
+description = "The native COPT backend for moirspy"
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: Implementation :: PyPy",
+]
+dynamic = ["version"]
+
+[project.urls]
+Homepage = "https://github.com/riverflows2333/moi-rs"
+Repository = "https://github.com/riverflows2333/moi-rs"
+Issues = "https://github.com/riverflows2333/moi-rs/issues"

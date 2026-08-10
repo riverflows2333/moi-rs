@@ -1,0 +1,19 @@
+[package]
+name = "moi-solver-copt"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+libloading.workspace = true
+moi-core.workspace = true
+moi-solver-api.workspace = true
+moi-bridge.workspace = true
+
+[features]
+default = ["copt80"]
+copt80 = []

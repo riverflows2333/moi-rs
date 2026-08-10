@@ -1,0 +1,17 @@
+[package]
+name = "moirspy-copt"
+version = "0.2.0"
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[lib]
+name = "moirspy_copt"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3.workspace = true
+moi-solver-copt.workspace = true
+moi-bridge.workspace = true
+moi-solver-api.workspace = true
+moi-core.workspace = true
