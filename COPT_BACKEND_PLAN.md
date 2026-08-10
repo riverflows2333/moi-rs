@@ -385,10 +385,10 @@ model.optimize()
 
 ### 阶段 B：loader、API 与 RAII
 
-- [ ] 实现跨平台 loader 和精确库名过滤。
-- [ ] 加载最小 `CoptApi` 函数表。
+- [x] 实现跨平台 loader 和精确库名过滤。
+- [x] 加载最小 `CoptApi` 函数表。
 - [ ] 实现 `CoptEnv`、`SharedCoptEnv` 和 `CoptOptimizer` 构造/析构。
-- [ ] 用 `COPT_GetBanner` 做动态库 smoke test。
+- [x] 用 `COPT_GetBanner` 做动态库 smoke test。
 - [ ] 所有创建失败路径释放已创建资源。
 
 验收：无安装时 loader 单测通过；有安装/许可证时 env/prob smoke test 通过。
