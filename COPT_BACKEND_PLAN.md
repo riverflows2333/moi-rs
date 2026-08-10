@@ -29,7 +29,7 @@
 
 ## 2. 官方版本与 API 选择
 
-计划以官方 COPT 8.0 文档和安装包中的 `copt.h` 为准。当前官方安装文档展示的补丁版本为 8.0.5。
+计划以官方 COPT 8.0 文档和安装包中的 `copt.h` 为准。本机已安装 COPT 8.0.6，后续绑定以 `D:\env\copt80\include\copt.h` 为准。
 
 官方资料：
 
@@ -376,10 +376,10 @@ model.optimize()
 
 ### 阶段 A：前置清理与骨架
 
-- [ ] 在 workspace dependencies 增加 `moi-solver-copt`。
-- [ ] 创建两个 crate 和空模块结构。
-- [ ] 从 COPT 8.0.5 `copt.h` 生成/核对最小 bindings。
-- [ ] 两个 crate 在没有 COPT 安装时也能 `cargo check`。
+- [x] 在 workspace dependencies 增加 `moi-solver-copt`。
+- [x] 创建两个 crate 和空模块结构。
+- [ ] 从 COPT 8.0.6 `copt.h` 生成/核对最小 bindings。
+- [x] 两个 crate 在没有 COPT 安装时也能 `cargo check`。
 
 验收：`cargo check --workspace --all-targets`。
 
