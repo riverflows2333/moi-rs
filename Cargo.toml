@@ -14,9 +14,10 @@ license = "MIT"
 [workspace.dependencies]
 # 在这里统一声明依赖版本，子 crate 就不需要写版本号了
 pyo3 = { version = "0.29.2", features = ["extension-module", "abi3-py38"] }
-libloading = "0.8"
+libloading = "0.9.0"
 # 内部依赖也在这里声明
 moi-core = { path = "crates/moi-core" }
 moi-solver-api = { path = "crates/moi-solver-api" }
 moi-bridge = { path = "crates/moi-bridge" }
 moi-solver-gurobi = { path = "crates/moi-solver-gurobi" }
+moi-solver-copt = { path = "crates/moi-solver-copt" }
