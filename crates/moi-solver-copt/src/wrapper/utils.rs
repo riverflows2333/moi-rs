@@ -1,7 +1,7 @@
 //! COPT-specific checked conversions and sparse matrix lowering helpers.
 
 use crate::{CoptApi, bindings};
-use moi_core::{MoiError, ScalarFunctionType, ScalarSetType};
+use moi_core::{MoiError, ScalarFunctionType, ScalarSetType, SolveStatus};
 use moi_solver_api::{ensure_len, scalar_function_to_linear, scalar_set_to_bounds};
 use std::ffi::{CStr, CString, c_char, c_int, c_void};
 
@@ -60,6 +60,27 @@ pub(crate) fn map_variable_type(value: char) -> Result<c_char, MoiError> {
         _ => Err(MoiError::InvalidInput(format!(
             "unsupported COPT variable type '{value}'; expected 'C', 'B', or 'I'"
         ))),
+    }
+}
+
+pub(crate) fn map_copt_status(native: c_int, has_solution: bool) -> SolveStatus {
+    match native as u32 {
+        bindings::COPT_STATUS_OPTIMAL | bindings::COPT_STATUS_LOCAL_OPTIMAL => SolveStatus::Optimal,
+        bindings::COPT_STATUS_INFEASIBLE | bindings::COPT_STATUS_LOCAL_INFEASIBLE => {
+            SolveStatus::Infeasible
+        }
+        bindings::COPT_STATUS_UNBOUNDED => SolveStatus::Unbounded,
+        bindings::COPT_STATUS_NODELIMIT
+        | bindings::COPT_STATUS_TIMEOUT
+        | bindings::COPT_STATUS_INTERRUPTED
+        | bindings::COPT_STATUS_IMPRECISE
+        | bindings::COPT_STATUS_ITERLIMIT
+        | bindings::COPT_STATUS_MEMLIMIT
+            if has_solution =>
+        {
+            SolveStatus::Feasible
+        }
+        _ => SolveStatus::Unknown,
     }
 }
 
@@ -253,5 +274,21 @@ mod tests {
     fn infinite_bounds_use_copt_sentinel() {
         assert_eq!(normalize_bound(f64::INFINITY), bindings::COPT_INFINITY);
         assert_eq!(normalize_bound(f64::NEG_INFINITY), -bindings::COPT_INFINITY);
+    }
+
+    #[test]
+    fn limit_status_requires_an_incumbent_to_be_feasible() {
+        assert_eq!(
+            map_copt_status(bindings::COPT_STATUS_TIMEOUT as c_int, true),
+            SolveStatus::Feasible
+        );
+        assert_eq!(
+            map_copt_status(bindings::COPT_STATUS_TIMEOUT as c_int, false),
+            SolveStatus::Unknown
+        );
+        assert_eq!(
+            map_copt_status(bindings::COPT_STATUS_INF_OR_UNB as c_int, false),
+            SolveStatus::Unknown
+        );
     }
 }

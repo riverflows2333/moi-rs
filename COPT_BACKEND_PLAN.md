@@ -405,11 +405,11 @@ model.optimize()
 
 ### 阶段 D：求解、状态、参数与结果
 
-- [ ] `COPT_Solve`。
-- [ ] 统一 Status/HasSol/ObjVal 查询。
-- [ ] LP/MIP solution cache。
-- [ ] TimeLimit、Silent、Raw int/double 参数。
-- [ ] infeasible/unbounded/time-limit-with-incumbent 状态映射测试。
+- [x] `COPT_Solve`。
+- [x] 统一 Status/HasSol/ObjVal 查询。
+- [x] LP/MIP solution cache。
+- [x] TimeLimit、Silent、Raw int/double 参数。
+- [x] infeasible/unbounded/time-limit-with-incumbent 状态映射测试。
 
 验收：Rust 端 LP、MILP、infeasible、unbounded、参数和解值测试通过。
 

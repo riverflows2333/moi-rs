@@ -1,8 +1,8 @@
 use moi_core::{
-    AffineTerm, AttrValue, ModelAttr, ModelSense, ScalarAffineFn, ScalarFunctionType,
-    ScalarSetType, VarId,
+    AffineTerm, AttrValue, ModelAttr, ModelSense, OptimizerAttr, ScalarAffineFn,
+    ScalarFunctionType, ScalarSetType, SolveStatus, VarId,
 };
-use moi_solver_api::{BoundType, ModelLike, NameType};
+use moi_solver_api::{BoundType, ModelLike, NameType, Optimizer};
 use moi_solver_copt::{CoptApi, CoptEnv, CoptOptimizer, find_library};
 use std::sync::{Arc, Mutex};
 
@@ -13,7 +13,11 @@ fn configured_optimizer() -> Option<CoptOptimizer> {
     let env = Arc::new(Mutex::new(
         CoptEnv::new(api).expect("COPT environment should be created"),
     ));
-    Some(CoptOptimizer::new(env).expect("COPT problem should be created"))
+    let mut optimizer = CoptOptimizer::new(env).expect("COPT problem should be created");
+    optimizer
+        .set_optimizer_attr(OptimizerAttr::Silent, AttrValue::Bool(true))
+        .expect("COPT logging should be disabled");
+    Some(optimizer)
 }
 
 fn affine(terms: &[(usize, f64)], constant: f64) -> ScalarFunctionType {
@@ -154,4 +158,160 @@ fn invalid_inputs_do_not_change_rust_model_counts() {
             .is_err()
     );
     assert_eq!(optimizer.num_constraints(), 0);
+}
+
+#[test]
+fn solves_lp_and_invalidates_cached_solution_after_mutation() {
+    let Some(mut optimizer) = configured_optimizer() else {
+        return;
+    };
+    optimizer.add_variables(2, None, None, None, None).unwrap();
+    optimizer
+        .add_constraint(
+            affine(&[(0, 1.0), (1, 2.0)], 0.0),
+            ScalarSetType::GreaterThan(4.0),
+            None,
+        )
+        .unwrap();
+    optimizer
+        .set_objective(affine(&[(0, 1.0), (1, 1.0)], 3.0), ModelSense::Minimize)
+        .unwrap();
+
+    assert_eq!(optimizer.optimize().unwrap(), SolveStatus::Optimal);
+    assert!((optimizer.get_var_value(VarId(0)).unwrap() - 0.0).abs() < 1e-7);
+    assert!((optimizer.get_var_value(VarId(1)).unwrap() - 2.0).abs() < 1e-7);
+    assert!((optimizer.get_objective_value().unwrap() - 5.0).abs() < 1e-7);
+    assert_eq!(
+        optimizer.get_model_attr(ModelAttr::ResultCount),
+        Some(AttrValue::Usize(1))
+    );
+
+    optimizer
+        .add_variable(Some("new"), None, None, None)
+        .unwrap();
+    assert_eq!(optimizer.get_var_value(VarId(0)), None);
+    assert_eq!(optimizer.get_objective_value(), None);
+    assert_eq!(
+        optimizer.get_model_attr(ModelAttr::TerminationStatus),
+        Some(AttrValue::Status(SolveStatus::Unknown))
+    );
+}
+
+#[test]
+fn solves_binary_milp_with_parameters_and_objective_constant() {
+    let Some(mut optimizer) = configured_optimizer() else {
+        return;
+    };
+    optimizer
+        .set_optimizer_attr(OptimizerAttr::TimeLimit, AttrValue::Float(10.0))
+        .unwrap();
+    optimizer
+        .set_optimizer_attr(OptimizerAttr::Raw("Threads".into()), AttrValue::Int(1))
+        .unwrap();
+    optimizer
+        .set_optimizer_attr(OptimizerAttr::Raw("Logging".into()), AttrValue::Bool(false))
+        .unwrap();
+    optimizer
+        .set_optimizer_attr(OptimizerAttr::Silent, AttrValue::Bool(true))
+        .unwrap();
+    optimizer
+        .add_variables(
+            2,
+            None,
+            Some(vec!['B', 'B']),
+            Some(BoundType::Single(0.0)),
+            Some(BoundType::Single(1.0)),
+        )
+        .unwrap();
+    optimizer
+        .add_constraint(
+            affine(&[(0, 2.0), (1, 1.0)], 0.0),
+            ScalarSetType::LessThan(2.0),
+            None,
+        )
+        .unwrap();
+    optimizer
+        .set_objective(affine(&[(0, 2.0), (1, 1.0)], 5.0), ModelSense::Maximize)
+        .unwrap();
+
+    assert_eq!(optimizer.optimize().unwrap(), SolveStatus::Optimal);
+    assert!((optimizer.get_var_value(VarId(0)).unwrap() - 1.0).abs() < 1e-7);
+    assert!((optimizer.get_var_value(VarId(1)).unwrap() - 0.0).abs() < 1e-7);
+    assert!((optimizer.get_objective_value().unwrap() - 7.0).abs() < 1e-7);
+}
+
+#[test]
+fn infeasible_and_unbounded_models_have_no_cached_result() {
+    let Some(mut infeasible) = configured_optimizer() else {
+        return;
+    };
+    infeasible
+        .add_variable(Some("x"), None, Some(0.0), Some(1.0))
+        .unwrap();
+    infeasible
+        .add_constraint(
+            ScalarFunctionType::Variable(VarId(0)),
+            ScalarSetType::GreaterThan(2.0),
+            None,
+        )
+        .unwrap();
+    assert_eq!(infeasible.optimize().unwrap(), SolveStatus::Infeasible);
+    assert_eq!(infeasible.get_var_value(VarId(0)), None);
+    assert_eq!(infeasible.get_objective_value(), None);
+
+    let Some(mut unbounded) = configured_optimizer() else {
+        return;
+    };
+    unbounded
+        .add_variable(Some("x"), None, Some(0.0), None)
+        .unwrap();
+    unbounded
+        .set_objective(ScalarFunctionType::Variable(VarId(0)), ModelSense::Maximize)
+        .unwrap();
+    assert_eq!(unbounded.optimize().unwrap(), SolveStatus::Unbounded);
+    assert_eq!(unbounded.get_var_value(VarId(0)), None);
+    assert_eq!(unbounded.get_objective_value(), None);
+}
+
+#[test]
+fn invalid_parameter_values_are_rejected_before_native_calls() {
+    let Some(mut optimizer) = configured_optimizer() else {
+        return;
+    };
+    assert!(
+        optimizer
+            .set_optimizer_attr(OptimizerAttr::TimeLimit, AttrValue::Int(1))
+            .is_err()
+    );
+    assert!(
+        optimizer
+            .set_optimizer_attr(OptimizerAttr::TimeLimit, AttrValue::Float(-1.0))
+            .is_err()
+    );
+    assert!(
+        optimizer
+            .set_optimizer_attr(OptimizerAttr::Silent, AttrValue::Float(1.0))
+            .is_err()
+    );
+    assert!(
+        optimizer
+            .set_optimizer_attr(
+                OptimizerAttr::Raw("Threads".into()),
+                AttrValue::String("one".into()),
+            )
+            .is_err()
+    );
+    assert!(
+        optimizer
+            .set_optimizer_attr(
+                OptimizerAttr::Raw("Threads".into()),
+                AttrValue::Int(i64::MAX),
+            )
+            .is_err()
+    );
+    assert!(
+        optimizer
+            .set_optimizer_attr(OptimizerAttr::Raw("bad\0name".into()), AttrValue::Int(1),)
+            .is_err()
+    );
 }

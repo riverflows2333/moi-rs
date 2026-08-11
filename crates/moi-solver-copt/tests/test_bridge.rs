@@ -1,8 +1,9 @@
 use moi_bridge::BridgeOptimizer;
 use moi_core::{
-    AffineTerm, ModelAttr, ModelSense, ScalarAffineFn, ScalarFunctionType, ScalarSetType, VarId,
+    AffineTerm, AttrValue, ModelAttr, ModelSense, OptimizerAttr, ScalarAffineFn,
+    ScalarFunctionType, ScalarSetType, SolveStatus, VarId,
 };
-use moi_solver_api::{BoundType, ModelLike, NameType};
+use moi_solver_api::{BoundType, ModelLike, NameType, Optimizer};
 use moi_solver_copt::{CoptApi, CoptEnv, CoptOptimizer, find_library};
 use std::sync::{Arc, Mutex};
 
@@ -45,6 +46,7 @@ fn bridge_supports_initial_sync_and_incremental_modeling() {
         )
         .unwrap();
     bridge
+        // x + y <= 1
         .add_constraint(
             affine(&[(0, 1.0), (1, 1.0)]),
             ScalarSetType::LessThan(1.0),
@@ -52,7 +54,11 @@ fn bridge_supports_initial_sync_and_incremental_modeling() {
         )
         .unwrap();
     bridge
+        // maximize x + 2y
         .set_objective(affine(&[(0, 1.0), (1, 2.0)]), ModelSense::Maximize)
+        .unwrap();
+    bridge
+        .set_optimizer_attr(OptimizerAttr::Silent, AttrValue::Bool(false))
         .unwrap();
 
     bridge.attach_backend(Box::new(optimizer)).unwrap();
@@ -69,6 +75,11 @@ fn bridge_supports_initial_sync_and_incremental_modeling() {
         )
         .unwrap();
     bridge.update().unwrap();
+
+    assert_eq!(bridge.optimize().unwrap(), SolveStatus::Optimal);
+    assert!((bridge.get_var_value(VarId(0)).unwrap() - 0.0).abs() < 1e-7);
+    assert!((bridge.get_var_value(VarId(1)).unwrap() - 1.0).abs() < 1e-7);
+    assert!((bridge.get_objective_value().unwrap() - 2.0).abs() < 1e-7);
 
     assert_eq!(
         bridge.get_model_attr(ModelAttr::NumberOfVariables),

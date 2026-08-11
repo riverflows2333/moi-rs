@@ -1,11 +1,11 @@
 use crate::wrapper::utils::{
-    CStringArray, build_copt_rows, checked_c_int, ensure_finite, map_variable_type, native_error,
-    normalize_bound, ptr_or_null,
+    CStringArray, build_copt_rows, checked_c_int, ensure_finite, map_copt_status,
+    map_variable_type, native_error, normalize_bound, ptr_or_null,
 };
 use crate::{CoptApi, SharedCoptEnv, bindings};
 use moi_core::*;
 use moi_solver_api::*;
-use std::ffi::{c_char, c_int, c_void};
+use std::ffi::{CString, c_char, c_int, c_void};
 use std::ptr;
 use std::sync::Arc;
 
@@ -18,6 +18,9 @@ pub struct CoptOptimizer {
     num_constrs: usize,
     objective: Option<ScalarFunctionType>,
     sense: Option<ModelSense>,
+    cached_status: Option<SolveStatus>,
+    cached_solution: Option<Vec<f64>>,
+    cached_objective: Option<f64>,
 }
 
 // A COPT problem is only accessed through `&mut self` by the optimizer API.
@@ -53,6 +56,9 @@ impl CoptOptimizer {
             num_constrs: 0,
             objective: None,
             sense: None,
+            cached_status: None,
+            cached_solution: None,
+            cached_objective: None,
         })
     }
 
@@ -70,6 +76,58 @@ impl CoptOptimizer {
         } else {
             Err(native_error(&self.api, code, context))
         }
+    }
+
+    fn invalidate_solution(&mut self) {
+        self.cached_status = None;
+        self.cached_solution = None;
+        self.cached_objective = None;
+    }
+
+    fn get_int_attr(&self, name: &[u8], context: &'static str) -> Result<c_int, MoiError> {
+        let mut value = 0;
+        self.check(
+            unsafe {
+                (self.api.COPT_GetIntAttr)(self.prob, name.as_ptr().cast::<c_char>(), &mut value)
+            },
+            context,
+        )?;
+        Ok(value)
+    }
+
+    fn get_dbl_attr(&self, name: &[u8], context: &'static str) -> Result<f64, MoiError> {
+        let mut value = 0.0;
+        self.check(
+            unsafe {
+                (self.api.COPT_GetDblAttr)(self.prob, name.as_ptr().cast::<c_char>(), &mut value)
+            },
+            context,
+        )?;
+        Ok(value)
+    }
+
+    fn set_int_param(
+        &self,
+        name: *const c_char,
+        value: c_int,
+        context: &'static str,
+    ) -> Result<(), MoiError> {
+        self.check(
+            unsafe { (self.api.COPT_SetIntParam)(self.prob, name, value) },
+            context,
+        )
+    }
+
+    fn set_dbl_param(
+        &self,
+        name: *const c_char,
+        value: f64,
+        context: &'static str,
+    ) -> Result<(), MoiError> {
+        self.check(
+            unsafe { (self.api.COPT_SetDblParam)(self.prob, name, value) },
+            context,
+        )
     }
 }
 
@@ -142,6 +200,9 @@ impl ModelLike for CoptOptimizer {
 
         let ids = (self.num_vars..end).map(VarId).collect();
         self.num_vars = end;
+        if n != 0 {
+            self.invalidate_solution();
+        }
         Ok(ids)
     }
 
@@ -185,6 +246,9 @@ impl ModelLike for CoptOptimizer {
 
         let ids = (self.num_constrs..end).map(ConstrId).collect();
         self.num_constrs = end;
+        if n != 0 {
+            self.invalidate_solution();
+        }
         Ok(ids)
     }
 
@@ -241,6 +305,7 @@ impl ModelLike for CoptOptimizer {
 
         self.objective = Some(function);
         self.sense = Some(sense);
+        self.invalidate_solution();
         Ok(())
     }
 
@@ -257,9 +322,14 @@ impl ModelLike for CoptOptimizer {
             ModelAttr::ListOfVariableIndices => {
                 Some(AttrValue::VecUsize((0..self.num_vars).collect::<Vec<_>>()))
             }
-            ModelAttr::TerminationStatus => Some(AttrValue::Status(SolveStatus::Unknown)),
-            ModelAttr::ResultCount => Some(AttrValue::Usize(0)),
-            ModelAttr::ModelName | ModelAttr::ObjectiveValue => None,
+            ModelAttr::TerminationStatus => Some(AttrValue::Status(
+                self.cached_status.unwrap_or(SolveStatus::Unknown),
+            )),
+            ModelAttr::ResultCount => Some(AttrValue::Usize(usize::from(
+                self.cached_solution.is_some(),
+            ))),
+            ModelAttr::ObjectiveValue => self.cached_objective.map(AttrValue::Float),
+            ModelAttr::ModelName => None,
         }
     }
 
@@ -276,18 +346,122 @@ impl ModelLike for CoptOptimizer {
 
     fn set_optimizer_attr(
         &mut self,
-        _attr: OptimizerAttr,
-        _value: AttrValue,
+        attr: OptimizerAttr,
+        value: AttrValue,
     ) -> Result<(), MoiError> {
-        Err(MoiError::UnsupportedAttribute)
+        match attr {
+            OptimizerAttr::SolverName => Err(MoiError::SetAttributeNotAllowed),
+            OptimizerAttr::TimeLimit => {
+                let AttrValue::Float(value) = value else {
+                    return Err(MoiError::InvalidInput(
+                        "TimeLimit requires a floating-point value".into(),
+                    ));
+                };
+                if !value.is_finite() || value < 0.0 {
+                    return Err(MoiError::InvalidInput(
+                        "TimeLimit must be finite and nonnegative".into(),
+                    ));
+                }
+                self.set_dbl_param(
+                    bindings::COPT_DBLPARAM_TIMELIMIT.as_ptr().cast::<c_char>(),
+                    value,
+                    "COPT_SetDblParam(TimeLimit)",
+                )
+            }
+            OptimizerAttr::Silent => {
+                let AttrValue::Bool(silent) = value else {
+                    return Err(MoiError::InvalidInput(
+                        "Silent requires a boolean value".into(),
+                    ));
+                };
+                self.set_int_param(
+                    bindings::COPT_INTPARAM_LOGGING.as_ptr().cast::<c_char>(),
+                    if silent { 0 } else { 1 },
+                    "COPT_SetIntParam(Logging)",
+                )
+            }
+            OptimizerAttr::Raw(name) => {
+                let name = CString::new(name).map_err(|_| {
+                    MoiError::InvalidInput(
+                        "raw COPT parameter name contains an embedded NUL byte".into(),
+                    )
+                })?;
+                match value {
+                    AttrValue::Bool(value) => self.set_int_param(
+                        name.as_ptr(),
+                        c_int::from(value),
+                        "COPT_SetIntParam(Raw)",
+                    ),
+                    AttrValue::Int(value) => {
+                        let value = c_int::try_from(value).map_err(|_| {
+                            MoiError::InvalidInput(
+                                "raw COPT integer parameter exceeds c_int range".into(),
+                            )
+                        })?;
+                        self.set_int_param(name.as_ptr(), value, "COPT_SetIntParam(Raw)")
+                    }
+                    AttrValue::Float(value) => {
+                        ensure_finite(value, "raw COPT floating-point parameter")?;
+                        self.set_dbl_param(name.as_ptr(), value, "COPT_SetDblParam(Raw)")
+                    }
+                    _ => Err(MoiError::InvalidInput(
+                        "raw COPT parameters accept only bool, int, or float values".into(),
+                    )),
+                }
+            }
+        }
     }
 }
 
 impl Optimizer for CoptOptimizer {
     fn optimize(&mut self) -> Result<SolveStatus, MoiError> {
-        Err(MoiError::Msg(
-            "COPT optimization is not implemented yet".into(),
-        ))
+        self.invalidate_solution();
+        self.check(unsafe { (self.api.COPT_Solve)(self.prob) }, "COPT_Solve")?;
+
+        let native_status =
+            self.get_int_attr(bindings::COPT_INTATTR_STATUS, "COPT_GetIntAttr(Status)")?;
+        let has_solution =
+            self.get_int_attr(bindings::COPT_INTATTR_HASSOL, "COPT_GetIntAttr(HasSol)")? != 0;
+        let status = map_copt_status(native_status, has_solution);
+
+        let (solution, objective) = if has_solution {
+            let is_mip =
+                self.get_int_attr(bindings::COPT_INTATTR_ISMIP, "COPT_GetIntAttr(IsMIP)")? != 0;
+            let mut solution = vec![0.0; self.num_vars];
+            if self.num_vars != 0 {
+                let code = if is_mip {
+                    unsafe { (self.api.COPT_GetSolution)(self.prob, solution.as_mut_ptr()) }
+                } else {
+                    unsafe {
+                        (self.api.COPT_GetLpSolution)(
+                            self.prob,
+                            solution.as_mut_ptr(),
+                            ptr::null_mut(),
+                            ptr::null_mut(),
+                            ptr::null_mut(),
+                        )
+                    }
+                };
+                self.check(
+                    code,
+                    if is_mip {
+                        "COPT_GetSolution"
+                    } else {
+                        "COPT_GetLpSolution"
+                    },
+                )?;
+            }
+            let objective =
+                self.get_dbl_attr(bindings::COPT_DBLATTR_OBJVAL, "COPT_GetDblAttr(ObjVal)")?;
+            (Some(solution), Some(objective))
+        } else {
+            (None, None)
+        };
+
+        self.cached_status = Some(status);
+        self.cached_solution = solution;
+        self.cached_objective = objective;
+        Ok(status)
     }
 
     fn compute_conflict(&mut self) -> Result<(), MoiError> {
@@ -296,12 +470,15 @@ impl Optimizer for CoptOptimizer {
         ))
     }
 
-    fn get_var_value(&self, _var_id: VarId) -> Option<f64> {
-        None
+    fn get_var_value(&self, var_id: VarId) -> Option<f64> {
+        self.cached_solution
+            .as_ref()
+            .and_then(|solution| solution.get(var_id.0))
+            .copied()
     }
 
     fn get_objective_value(&self) -> Option<f64> {
-        None
+        self.cached_objective
     }
 }
 
