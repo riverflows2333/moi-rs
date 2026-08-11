@@ -3,7 +3,7 @@
 `moi-rs` is a Rust optimization-modeling workspace inspired by
 [MathOptInterface](https://jump.dev/MathOptInterface.jl/stable/). It provides a
 solver-independent modeling layer, a bridge optimizer, and Python bindings with
-a Gurobi backend.
+Gurobi and COPT backends.
 
 The Python interface follows familiar mathematical-programming APIs: create
 variables, compose linear expressions with Python operators, add constraints,
@@ -19,6 +19,7 @@ select a backend, and optimize.
 | --- | --- | --- |
 | [`moirspy`](https://pypi.org/project/moirspy/) | `moirspy` | Solver-independent modeling API |
 | [`moirspy-gurobi`](https://pypi.org/project/moirspy-gurobi/) | `moirspy_gurobi` | Gurobi backend loaded through its native library |
+| `moirspy-copt` | `moirspy_copt` | COPT backend loaded through its native C library |
 
 Both packages require Python 3.8 or newer. To model and solve with Gurobi,
 install both packages:
@@ -29,6 +30,10 @@ python -m pip install moirspy moirspy-gurobi
 
 `moirspy-gurobi` does not bundle Gurobi or a license. Install Gurobi separately
 and make sure its native library and license are available.
+
+The COPT backend is installed with `python -m pip install moirspy moirspy-copt`
+and discovers COPT through `COPT_HOME`. Neither backend bundles its solver or
+license.
 
 > **Important:** `GUROBI_HOME` must be set to the Gurobi installation directory
 > before creating the Gurobi backend. Without it, `setBackend("gurobi")` may be
@@ -137,8 +142,9 @@ yet.
 ### Parameters and solution values
 
 `setParam(name, value)` accepts a Boolean, integer, float, or string. With the
-Gurobi backend, raw Gurobi parameter names such as `OutputFlag`, `TimeLimit`, and
-`MIPGap` are forwarded to the native solver.
+Gurobi backend, raw names such as `OutputFlag` and `MIPGap` are forwarded to
+Gurobi. With COPT, use names such as `Logging`, `Threads`, and `TimeLimit` with
+Boolean, integer, or floating-point values.
 
 An explicit Gurobi environment can be imported from the solver package and
 passed through the generic backend boundary:
@@ -183,7 +189,8 @@ The main crates are organized by layer:
 - `moi-model-dummy`: in-memory model used for tests and examples
 - `moi-bridge`: solver-independent model storage and backend synchronization
 - `moi-solver-gurobi`: dynamic Gurobi loading and native solver wrapper
-- `moirspy` / `moirspy-gurobi`: PyO3 extension modules
+- `moi-solver-copt`: dynamic COPT loading and native solver wrapper
+- `moirspy` / `moirspy-gurobi` / `moirspy-copt`: PyO3 extension modules
 
 Build and test the Rust workspace:
 
@@ -203,9 +210,14 @@ maturin develop
 
 cd ../moirspy-gurobi
 maturin develop
+
+cd ../moirspy-copt
+maturin develop
 ```
 
-Running the Gurobi tests requires a working Gurobi installation and license.
+Native backend tests require the corresponding solver installation and license;
+COPT can also start in its documented size-limited mode when no license is
+available.
 
 ## License
 

@@ -1,8 +1,7 @@
-use std::path::PathBuf;
+use moi_solver_copt::CoptLibraryNotFound;
+use std::path::{Path, PathBuf};
 
-/// Resolve an explicit path first, otherwise defer to `COPT_HOME`.
-pub fn resolve_library(dll_path: Option<String>) -> Option<PathBuf> {
-    dll_path
-        .and_then(moi_solver_copt::find_library_from)
-        .or_else(moi_solver_copt::find_library)
+/// Resolve an explicit COPT library/root, otherwise use normal discovery.
+pub fn resolve_library(dll_path: Option<String>) -> Result<PathBuf, CoptLibraryNotFound> {
+    moi_solver_copt::resolve_library(dll_path.as_deref().map(Path::new))
 }

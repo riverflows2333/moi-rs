@@ -415,12 +415,12 @@ model.optimize()
 
 ### 阶段 E：Python backend
 
-- [ ] 实现 `moirspy_copt.Env`。
-- [ ] 实现与 Gurobi 完全一致的低层 `Model` 协议。
-- [ ] 补 `.pyi`、README、`pyproject.toml`。
-- [ ] `maturin develop`。
-- [ ] 验证低层 `moirspy_copt.Model`。
-- [ ] 验证高层 `moirspy.Model.setBackend("copt")` 和显式 `env=`。
+- [x] 实现 `moirspy_copt.Env`。
+- [x] 实现与 Gurobi 完全一致的低层 `Model` 协议。
+- [x] 补 `.pyi`、README、`pyproject.toml`。
+- [x] `maturin develop`。
+- [x] 验证低层 `moirspy_copt.Model`。
+- [x] 验证高层 `moirspy.Model.setBackend("copt")` 和显式 `env=`。
 
 验收：Python LP、MILP、向量 bounds、增量建模、不可行模型和错误输入测试通过。
 

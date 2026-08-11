@@ -9,13 +9,16 @@ pluggable solver backends.
 
 ## Installation
 
-Install the modeling package and a backend. For Gurobi:
+Install the modeling package and a backend. For Gurobi or COPT:
 
 ```bash
 python -m pip install moirspy moirspy-gurobi
+python -m pip install moirspy moirspy-copt
 ```
 
-The Gurobi backend requires a separate Gurobi installation and license.
+Solver backends require the corresponding native solver installation and
+license. COPT discovery uses `COPT_HOME` in the same way that Gurobi discovery
+uses `GUROBI_HOME`.
 
 > **Important:** `GUROBI_HOME` must be set to the Gurobi installation directory
 > before calling `setBackend("gurobi")`.
@@ -71,8 +74,8 @@ the attached backend incrementally.
 - `quicksum(...)` sums any iterable of variables, linear expressions, or numbers.
 - `Model.setObjective(expr, MOI.MINIMIZE | MOI.MAXIMIZE)` sets the objective.
 - `Model.setParam(name, value)` stores a solver parameter.
-- `Model.setBackend("gurobi", env=None)` attaches the installed
-  `moirspy-gurobi` backend and optionally forwards an explicit solver
+- `Model.setBackend("gurobi", env=None)` or `Model.setBackend("copt", env=None)`
+  attaches the installed backend and optionally forwards an explicit solver
   environment.
 - `Model.optimize()` solves the model; use `Model.ObjVal` and `Var.X` for results.
 
