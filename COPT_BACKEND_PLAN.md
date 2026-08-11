@@ -395,11 +395,11 @@ model.optimize()
 
 ### 阶段 C：LP/MILP 建模
 
-- [ ] `add_variables`：C/B/I、bounds、names、长度检查、NUL 检查。
-- [ ] `add_constraints`：CSR、常数平移、四种 scalar set、非法 VarId 检查。
-- [ ] `set_objective`：完整覆盖旧目标、常数、方向。
-- [ ] `update`。
-- [ ] native 成功后才更新计数和缓存。
+- [x] `add_variables`：C/B/I、bounds、names、长度检查、NUL 检查。
+- [x] `add_constraints`：CSR、常数平移、四种 scalar set、非法 VarId 检查。
+- [x] `set_objective`：完整覆盖旧目标、常数、方向。
+- [x] `update`。
+- [x] native 成功后才更新计数和缓存。
 
 验收：直接 Rust API 构造 LP 和 MILP；dummy 对照测试确认传入数据一致。
 
