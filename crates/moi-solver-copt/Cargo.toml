@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
+exclude = ["src/bindings/gen.rs"]
 
 [lib]
 path = "src/lib.rs"

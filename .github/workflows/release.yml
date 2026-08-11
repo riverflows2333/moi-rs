@@ -5,41 +5,75 @@ on:
     tags:
       - 'moirspy-v*'
       - 'moirspy-gurobi-v*'
+      - 'moirspy-copt-v*'
   workflow_dispatch:
+
+concurrency:
+  group: python-release-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
   contents: read
 
 jobs:
-  # 1. 新增：动态解析 Tag，决定需要编译的包
   prepare:
     name: Prepare Matrix
     runs-on: ubuntu-latest
     outputs:
-      # 将 bash 脚本输出的包列表传递给后续 Job
       packages: ${{ steps.set-packages.outputs.packages }}
     steps:
+      - uses: actions/checkout@v4
+
       - name: Determine target packages based on tag
         id: set-packages
+        shell: bash
         run: |
-          if [[ "${{ github.ref }}" == refs/tags/moirspy-v* ]]; then
+          if [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == refs/tags/moirspy-v* ]]; then
             echo 'packages=["moirspy"]' >> "$GITHUB_OUTPUT"
-          elif [[ "${{ github.ref }}" == refs/tags/moirspy-gurobi-v* ]]; then
+            echo 'release_package=moirspy' >> "$GITHUB_OUTPUT"
+          elif [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == refs/tags/moirspy-gurobi-v* ]]; then
             echo 'packages=["moirspy-gurobi"]' >> "$GITHUB_OUTPUT"
+            echo 'release_package=moirspy-gurobi' >> "$GITHUB_OUTPUT"
+          elif [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == refs/tags/moirspy-copt-v* ]]; then
+            echo 'packages=["moirspy-copt"]' >> "$GITHUB_OUTPUT"
+            echo 'release_package=moirspy-copt' >> "$GITHUB_OUTPUT"
           else
-            # 如果是手动触发 (workflow_dispatch)，默认同时编译两个包
-            echo 'packages=["moirspy", "moirspy-gurobi"]' >> "$GITHUB_OUTPUT"
+            echo 'packages=["moirspy", "moirspy-gurobi", "moirspy-copt"]' >> "$GITHUB_OUTPUT"
           fi
 
-  # 2. 编译各平台的 Wheel 包
+      - name: Verify tag matches package version
+        if: github.event_name == 'push'
+        shell: bash
+        env:
+          PACKAGE: ${{ steps.set-packages.outputs.release_package }}
+        run: |
+          tag_version="${GITHUB_REF_NAME#${PACKAGE}-v}"
+          crate_version="$(awk -F '"' '/^version = "/ { print $2; exit }' "python/${PACKAGE}/Cargo.toml")"
+          if [[ -z "$crate_version" || "$tag_version" != "$crate_version" ]]; then
+            echo "Tag version '$tag_version' does not match ${PACKAGE} version '$crate_version'." >&2
+            exit 1
+          fi
+
+  test-copt-backend:
+    name: Test COPT backend without native runtime (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run solver-independent and native-skip tests
+        run: cargo test -p moi-solver-copt
+
   build-wheels:
     name: Build ${{ matrix.package }} on ${{ matrix.platform.runner }} (${{ matrix.platform.target }})
-    needs: prepare # 依赖 prepare 任务
+    needs: prepare
     runs-on: ${{ matrix.platform.runner }}
     strategy:
       fail-fast: false
       matrix:
-        # ⚠️ 核心魔法：从 prepare 任务动态读取需要编译的包
         package: ${{ fromJSON(needs.prepare.outputs.packages) }}
         platform:
           - runner: ubuntu-22.04
@@ -63,24 +97,27 @@ jobs:
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
-          # ⚠️ 核心修改：使用 working-directory 替代 manifest-path
           working-directory: python/${{ matrix.package }}
           target: ${{ matrix.platform.target }}
           args: --release --out dist
           sccache: 'true'
           manylinux: auto
 
+      - name: Verify backend wheel contents
+        if: matrix.package != 'moirspy'
+        run: python .github/scripts/audit_solver_artifact.py python/${{ matrix.package }}/dist
+
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
           name: wheels-${{ matrix.package }}-${{ matrix.platform.runner }}-${{ matrix.platform.target }}
-          # ⚠️ 注意：因为工作目录变了，打包输出的路径也变成了子目录下的 dist
           path: python/${{ matrix.package }}/dist
+          if-no-files-found: error
+          retention-days: 7
 
-  # 3. 编译源码包 (SDist)
   sdist:
     name: Build ${{ matrix.package }} sdist
-    needs: prepare # 同样依赖 prepare 任务
+    needs: prepare
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -91,28 +128,31 @@ jobs:
       - name: Build sdist
         uses: PyO3/maturin-action@v1
         with:
-          # ⚠️ 同样修改为 working-directory
           working-directory: python/${{ matrix.package }}
           command: sdist
           args: --out dist
+
+      - name: Verify backend sdist contents
+        if: matrix.package != 'moirspy'
+        run: python .github/scripts/audit_solver_artifact.py python/${{ matrix.package }}/dist
           
       - name: Upload sdist
         uses: actions/upload-artifact@v4
         with:
           name: sdist-${{ matrix.package }}
-          # ⚠️ 同样修改上传路径
           path: python/${{ matrix.package }}/dist
+          if-no-files-found: error
+          retention-days: 7
 
-  # 4. 安全发布到 PyPI
   release:
     name: Release to PyPI
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/')
-    needs: [build-wheels, sdist]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    needs: [test-copt-backend, build-wheels, sdist]
     
     permissions:
-      id-token: write 
-      contents: write 
+      id-token: write
+      contents: read
       
     steps:
       - uses: actions/download-artifact@v4
@@ -122,3 +162,5 @@ jobs:
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist

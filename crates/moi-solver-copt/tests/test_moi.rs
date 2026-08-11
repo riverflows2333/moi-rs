@@ -7,7 +7,10 @@ use moi_solver_copt::{CoptApi, CoptEnv, CoptOptimizer, find_library};
 use std::sync::{Arc, Mutex};
 
 fn configured_optimizer() -> Option<CoptOptimizer> {
-    let path = find_library()?;
+    let Some(path) = find_library() else {
+        eprintln!("skipping native COPT test: COPT native library was not found");
+        return None;
+    };
     let api =
         Arc::new(CoptApi::new(path).expect("configured COPT library should expose the MILP API"));
     let env = Arc::new(Mutex::new(

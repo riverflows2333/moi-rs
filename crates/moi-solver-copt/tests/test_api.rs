@@ -3,7 +3,10 @@ use std::ffi::{CStr, c_char};
 use std::sync::{Arc, Mutex};
 
 fn configured_api() -> Option<Arc<CoptApi>> {
-    let path = find_library()?;
+    let Some(path) = find_library() else {
+        eprintln!("skipping native COPT test: COPT native library was not found");
+        return None;
+    };
     Some(Arc::new(CoptApi::new(path).expect(
         "configured COPT library should expose the MILP API",
     )))
