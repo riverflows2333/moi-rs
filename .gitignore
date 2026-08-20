@@ -6,3 +6,4 @@ Cargo.lock
 __pycache__/
 *_PLAN.md
 input/
+crates/moi-solver-copt/src/bindings/gen.rs
