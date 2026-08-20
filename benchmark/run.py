@@ -24,7 +24,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--tools",
-        default="moirspy,moirspy-copt,coptpy",
+        default="moirspy-early,moirspy-late,moirspy-copt,coptpy",
         help=f"comma-separated builders: {','.join(BUILDERS)}",
     )
     parser.add_argument("--warmup", type=int, default=1)

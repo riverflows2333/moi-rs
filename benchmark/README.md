@@ -37,14 +37,17 @@ $env:COPT_HOME = 'D:\env\copt80'
 
 Available builders are:
 
-- `moirspy`: public high-level API, then attachment to the COPT backend;
+- `moirspy-early`: attach COPT before adding variables and constraints, so every
+  modeling operation is forwarded incrementally;
+- `moirspy-late`: build through the public API first, then attach COPT and replay
+  the completed model;
 - `moirspy-copt`: low-level batched Rust/COPT binding;
 - `coptpy`: official COPT Python modeling API.
 
-Choose a subset with `--tools moirspy,moirspy-copt`. Each solver environment is
-created once before timing so license and environment startup do not obscure the
-modeling-layer comparison. Builders that cannot be imported or initialized are
-reported as unavailable and the remaining builders still run.
+Choose a subset with `--tools moirspy-early,moirspy-late`. Each solver environment
+is created once before timing so license and environment startup do not obscure
+the modeling-layer comparison. Builders that cannot be imported or initialized
+are reported as unavailable and the remaining builders still run.
 
 Use `1-1` while iterating. Run `1-2` through `1-5` only after correctness and
 memory behavior are stable; the same parser and formulation scale without case-

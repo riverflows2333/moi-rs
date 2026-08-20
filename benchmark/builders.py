@@ -30,11 +30,14 @@ def prepare_moirspy() -> Any:
     return Env(_copt_dll())
 
 
-def build_moirspy(data: MinimalUcData, env: Any) -> Any:
+def _build_moirspy(data: MinimalUcData, env: Any, *, attach_early: bool) -> Any:
     from moirspy import MOI, Model, quicksum
 
     g_count, t_count = data.num_units, data.num_periods
-    model = Model("minimal-uc-moirspy")
+    mode = "early" if attach_early else "late"
+    model = Model(f"minimal-uc-moirspy-{mode}")
+    if attach_early:
+        model.setBackend("copt", env=env)
     on = model.addVars(g_count, t_count, lb=0.0, ub=1.0, vtype=MOI.BINARY, name="on")
     output = model.addVars(g_count, t_count, lb=0.0, vtype=MOI.CONTINUOUS, name="p")
     startup = model.addVars(g_count, t_count, lb=0.0, ub=1.0, vtype=MOI.BINARY, name="start")
@@ -99,8 +102,21 @@ def build_moirspy(data: MinimalUcData, env: Any) -> Any:
         MOI.MINIMIZE,
     )
     model.setParam("Logging", 0)
-    model.setBackend("copt", env=env)
+    if not attach_early:
+        model.setBackend("copt", env=env)
     return model
+
+
+def build_moirspy_early(data: MinimalUcData, env: Any) -> Any:
+    """Attach COPT first, then incrementally forward every modeling operation."""
+
+    return _build_moirspy(data, env, attach_early=True)
+
+
+def build_moirspy_late(data: MinimalUcData, env: Any) -> Any:
+    """Build in the bridge first, then replay the complete model into COPT."""
+
+    return _build_moirspy(data, env, attach_early=False)
 
 
 def prepare_moirspy_copt() -> Any:
@@ -288,7 +304,8 @@ def build_coptpy(data: MinimalUcData, env: Any) -> Any:
 
 
 BUILDERS = {
-    "moirspy": Builder("moirspy", prepare_moirspy, build_moirspy),
+    "moirspy-early": Builder("moirspy-early", prepare_moirspy, build_moirspy_early),
+    "moirspy-late": Builder("moirspy-late", prepare_moirspy, build_moirspy_late),
     "moirspy-copt": Builder("moirspy-copt", prepare_moirspy_copt, build_moirspy_copt),
     "coptpy": Builder("coptpy", prepare_coptpy, build_coptpy),
 }
