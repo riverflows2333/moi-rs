@@ -52,3 +52,19 @@ are reported as unavailable and the remaining builders still run.
 Use `1-1` while iterating. Run `1-2` through `1-5` only after correctness and
 memory behavior are stable; the same parser and formulation scale without case-
 specific branches.
+
+For coarse high-level stage timings, run:
+
+```powershell
+.\.venv\Scripts\python.exe -m benchmark.profile_moirspy
+```
+
+This diagnostic separates variables, constraint families, objective construction,
+and backend attachment. Its few timer calls are outside the normal benchmark path
+unless profiling is requested.
+
+To isolate `quicksum` scaling for `Var` versus three-term `LinExpr` items:
+
+```powershell
+.\.venv\Scripts\python.exe -m benchmark.profile_expr --sizes 9600 19392 48576
+```

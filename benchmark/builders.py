@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
@@ -30,17 +31,36 @@ def prepare_moirspy() -> Any:
     return Env(_copt_dll())
 
 
-def _build_moirspy(data: MinimalUcData, env: Any, *, attach_early: bool) -> Any:
+def _build_moirspy(
+    data: MinimalUcData,
+    env: Any,
+    *,
+    attach_early: bool,
+    stage_times: dict[str, float] | None = None,
+) -> Any:
     from moirspy import MOI, Model, quicksum
+
+    last_mark = time.perf_counter() if stage_times is not None else 0.0
+
+    def mark(stage: str) -> None:
+        nonlocal last_mark
+        if stage_times is None:
+            return
+        now = time.perf_counter()
+        stage_times[stage] = stage_times.get(stage, 0.0) + now - last_mark
+        last_mark = now
 
     g_count, t_count = data.num_units, data.num_periods
     mode = "early" if attach_early else "late"
     model = Model(f"minimal-uc-moirspy-{mode}")
+    mark("model")
     if attach_early:
         model.setBackend("copt", env=env)
+        mark("attach")
     on = model.addVars(g_count, t_count, lb=0.0, ub=1.0, vtype=MOI.BINARY, name="on")
     output = model.addVars(g_count, t_count, lb=0.0, vtype=MOI.CONTINUOUS, name="p")
     startup = model.addVars(g_count, t_count, lb=0.0, ub=1.0, vtype=MOI.BINARY, name="start")
+    mark("variables")
 
     model.addConstrs(
         (output[g, t] <= data.units[g].p_max * on[g, t] for g in range(g_count) for t in range(t_count)),
@@ -50,6 +70,7 @@ def _build_moirspy(data: MinimalUcData, env: Any, *, attach_early: bool) -> Any:
         (output[g, t] >= data.units[g].p_min * on[g, t] for g in range(g_count) for t in range(t_count)),
         name="output_lb",
     )
+    mark("output_bounds")
     model.addConstrs(
         (
             startup[g, t]
@@ -59,6 +80,7 @@ def _build_moirspy(data: MinimalUcData, env: Any, *, attach_early: bool) -> Any:
         ),
         name="startup",
     )
+    mark("startup")
     model.addConstrs(
         (
             output[g, t] - (data.units[g].initial_output if t == 0 else output[g, t - 1])
@@ -79,10 +101,12 @@ def _build_moirspy(data: MinimalUcData, env: Any, *, attach_early: bool) -> Any:
         ),
         name="ramp_down",
     )
+    mark("ramping")
     model.addConstrs(
         (quicksum(output[g, t] for g in range(g_count)) == data.loads[t] for t in range(t_count)),
         name="balance",
     )
+    mark("balance")
     model.addConstrs(
         (
             quicksum(data.units[g].p_max * on[g, t] - output[g, t] for g in range(g_count))
@@ -91,6 +115,7 @@ def _build_moirspy(data: MinimalUcData, env: Any, *, attach_early: bool) -> Any:
         ),
         name="reserve",
     )
+    mark("reserve")
     model.setObjective(
         quicksum(
             data.units[g].marginal_cost * output[g, t]
@@ -101,9 +126,12 @@ def _build_moirspy(data: MinimalUcData, env: Any, *, attach_early: bool) -> Any:
         ),
         MOI.MINIMIZE,
     )
+    mark("objective")
     model.setParam("Logging", 0)
+    mark("parameter")
     if not attach_early:
         model.setBackend("copt", env=env)
+        mark("attach")
     return model
 
 
@@ -117,6 +145,21 @@ def build_moirspy_late(data: MinimalUcData, env: Any) -> Any:
     """Build in the bridge first, then replay the complete model into COPT."""
 
     return _build_moirspy(data, env, attach_early=False)
+
+
+def profile_moirspy(
+    data: MinimalUcData, env: Any, *, attach_early: bool = False
+) -> tuple[Any, dict[str, float]]:
+    """Return a model and coarse stage timings for performance diagnosis."""
+
+    stage_times: dict[str, float] = {}
+    model = _build_moirspy(
+        data,
+        env,
+        attach_early=attach_early,
+        stage_times=stage_times,
+    )
+    return model, stage_times
 
 
 def prepare_moirspy_copt() -> Any:
