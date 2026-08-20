@@ -4,3 +4,5 @@ Cargo.lock
 .vscode
 .venv/
 __pycache__/
+*_PLAN.md
+input/
