@@ -15,6 +15,9 @@ impl LinExpr {
     pub fn get_fn(&self) -> ScalarAffineFn {
         self.f.clone()
     }
+    pub fn get_fn_ref(&self) -> &ScalarAffineFn {
+        &self.f
+    }
 }
 
 impl Default for LinExpr {
@@ -31,11 +34,11 @@ impl LinExpr {
         let mut afn = self.f.clone();
         // 判断右侧项类型，为浮点数、变量或线性表达式
         if let Ok(value) = _other.extract::<f64>() {
-            afn = afn.calculate(&ScalarAffineFn::with_constant(value), OperationType::Add);
-        } else if let Ok(var) = _other.extract::<Var>() {
+            afn.constant += value;
+        } else if let Ok(var) = _other.extract::<PyRef<'_, Var>>() {
             afn.push_term(var.get_id(), 1.0);
-        } else if let Ok(expr) = _other.extract::<LinExpr>() {
-            afn = afn.calculate(&expr.get_fn(), OperationType::Add);
+        } else if let Ok(expr) = _other.extract::<PyRef<'_, LinExpr>>() {
+            afn.add_assign(expr.get_fn_ref());
         } else {
             panic!("Unsupported type for addition with LinExpr");
         }
@@ -47,7 +50,7 @@ impl LinExpr {
         let mut afn = self.f.clone();
         // 判断左侧项类型，为浮点数
         if let Ok(value) = _other.extract::<f64>() {
-            afn = afn.calculate(&ScalarAffineFn::with_constant(value), OperationType::Add);
+            afn.constant += value;
         } else {
             panic!("Unsupported type for addition with LinExpr");
         }
@@ -59,11 +62,11 @@ impl LinExpr {
         let mut afn = self.f.clone();
         // 判断右侧项类型，为浮点数、变量或线性表达式
         if let Ok(value) = _other.extract::<f64>() {
-            afn = afn.calculate(&ScalarAffineFn::with_constant(value), OperationType::Sub);
-        } else if let Ok(var) = _other.extract::<Var>() {
+            afn.constant -= value;
+        } else if let Ok(var) = _other.extract::<PyRef<'_, Var>>() {
             afn.push_term(var.get_id(), -1.0);
-        } else if let Ok(expr) = _other.extract::<LinExpr>() {
-            afn = afn.calculate(&expr.get_fn(), OperationType::Sub);
+        } else if let Ok(expr) = _other.extract::<PyRef<'_, LinExpr>>() {
+            afn.add_scaled_assign(expr.get_fn_ref(), -1.0);
         } else {
             panic!("Unsupported type for subtraction with LinExpr");
         }
@@ -72,21 +75,21 @@ impl LinExpr {
     }
 
     fn __rsub__(&self, _other: &Bound<'_, PyAny>) -> LinExpr {
-        let mut afn = self.f.clone();
         // 判断左侧项类型，为浮点数
         if let Ok(value) = _other.extract::<f64>() {
-            afn = ScalarAffineFn::with_constant(value).calculate(&afn, OperationType::Sub);
+            let mut afn = ScalarAffineFn::with_constant(value);
+            afn.add_scaled_assign(&self.f, -1.0);
+            afn.simplify();
+            LinExpr::new(afn)
         } else {
             panic!("Unsupported type for subtraction with LinExpr");
         }
-        afn.simplify();
-        LinExpr::new(afn)
     }
 
     fn __mul__(&self, _other: &Bound<'_, PyAny>) -> LinExpr {
         if let Ok(value) = _other.extract::<f64>() {
-            let mut afn = self.f.clone();
-            afn = afn.calculate(&ScalarAffineFn::with_constant(value), OperationType::Mul);
+            let mut afn = ScalarAffineFn::with_capacity(self.f.terms.len());
+            afn.add_scaled_assign(&self.f, value);
             LinExpr::new(afn)
         } else {
             panic!("Unsupported type for multiplication with LinExpr");
@@ -95,8 +98,8 @@ impl LinExpr {
 
     fn __rmul__(&self, _other: &Bound<'_, PyAny>) -> LinExpr {
         if let Ok(value) = _other.extract::<f64>() {
-            let mut afn = self.f.clone();
-            afn = afn.calculate(&ScalarAffineFn::with_constant(value), OperationType::Mul);
+            let mut afn = ScalarAffineFn::with_capacity(self.f.terms.len());
+            afn.add_scaled_assign(&self.f, value);
             LinExpr::new(afn)
         } else {
             panic!("Unsupported type for multiplication with LinExpr");
@@ -108,13 +111,13 @@ impl LinExpr {
         let s: ScalarSetType;
         // 判断右侧项类型，为浮点数、变量或线性表达式
         if let Ok(value) = _other.extract::<f64>() {
-            afn = afn.calculate(&ScalarAffineFn::with_constant(value), OperationType::Sub);
+            afn.constant -= value;
             s = ScalarSetType::LessThan(0.0);
-        } else if let Ok(var) = _other.extract::<Var>() {
+        } else if let Ok(var) = _other.extract::<PyRef<'_, Var>>() {
             afn.push_term(var.get_id(), -1.0);
             s = ScalarSetType::LessThan(0.0);
-        } else if let Ok(expr) = _other.extract::<LinExpr>() {
-            afn = afn.calculate(&expr.get_fn(), OperationType::Sub);
+        } else if let Ok(expr) = _other.extract::<PyRef<'_, LinExpr>>() {
+            afn.add_scaled_assign(expr.get_fn_ref(), -1.0);
             s = ScalarSetType::LessThan(0.0);
         } else {
             panic!("Unsupported type for comparison with LinExpr");
@@ -128,13 +131,13 @@ impl LinExpr {
         let s: ScalarSetType;
         // 判断右侧项类型，为浮点数、变量或线性表达式
         if let Ok(value) = _other.extract::<f64>() {
-            afn = afn.calculate(&ScalarAffineFn::with_constant(value), OperationType::Sub);
+            afn.constant -= value;
             s = ScalarSetType::GreaterThan(0.0);
-        } else if let Ok(var) = _other.extract::<Var>() {
+        } else if let Ok(var) = _other.extract::<PyRef<'_, Var>>() {
             afn.push_term(var.get_id(), -1.0);
             s = ScalarSetType::GreaterThan(0.0);
-        } else if let Ok(expr) = _other.extract::<LinExpr>() {
-            afn = afn.calculate(&expr.get_fn(), OperationType::Sub);
+        } else if let Ok(expr) = _other.extract::<PyRef<'_, LinExpr>>() {
+            afn.add_scaled_assign(expr.get_fn_ref(), -1.0);
             s = ScalarSetType::GreaterThan(0.0);
         } else {
             panic!("Unsupported type for comparison with LinExpr");
@@ -148,13 +151,13 @@ impl LinExpr {
         let s: ScalarSetType;
         // 判断右侧项类型，为浮点数、变量或线性表达式
         if let Ok(value) = _other.extract::<f64>() {
-            afn = afn.calculate(&ScalarAffineFn::with_constant(value), OperationType::Sub);
+            afn.constant -= value;
             s = ScalarSetType::EqualTo(0.0);
-        } else if let Ok(var) = _other.extract::<Var>() {
+        } else if let Ok(var) = _other.extract::<PyRef<'_, Var>>() {
             afn.push_term(var.get_id(), -1.0);
             s = ScalarSetType::EqualTo(0.0);
-        } else if let Ok(expr) = _other.extract::<LinExpr>() {
-            afn = afn.calculate(&expr.get_fn(), OperationType::Sub);
+        } else if let Ok(expr) = _other.extract::<PyRef<'_, LinExpr>>() {
+            afn.add_scaled_assign(expr.get_fn_ref(), -1.0);
             s = ScalarSetType::EqualTo(0.0);
         } else {
             panic!("Unsupported type for comparison with LinExpr");

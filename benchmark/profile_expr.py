@@ -4,7 +4,7 @@ import argparse
 import gc
 import math
 import time
-from collections.abc import Callable, Iterable
+from collections.abc import Callable
 from typing import Any
 
 from benchmark.metrics import TimingSummary
@@ -31,15 +31,26 @@ def main() -> int:
         raise SystemExit("--repeat and all --sizes values must be positive")
     sizes = sorted(set(args.sizes))
 
-    from moirspy import Model, quicksum
+    from moirspy import Model, dot, quicksum
 
-    kinds: dict[str, Callable[[Any, int], Iterable[Any]]] = {
-        "var": lambda x, n: (x[0, i] for i in range(n)),
-        "two_term": lambda x, n: (x[0, i] + x[1, i] for i in range(n)),
-        "three_term": lambda x, n: (x[0, i] + x[1, i] + x[2, i] for i in range(n)),
-        "duplicate_var": lambda x, n: (x[0, i] + x[0, i] - x[0, i] for i in range(n)),
-        "weighted": lambda x, n: (
-            1.1 * x[0, i] + 2.2 * x[1, i] + 3.3 * x[2, i] for i in range(n)
+    kinds: dict[str, Callable[[Any, int], Any]] = {
+        "var": lambda x, n: quicksum(x[0, i] for i in range(n)),
+        "two_term": lambda x, n: quicksum(
+            x[0, i] + x[1, i] for i in range(n)
+        ),
+        "three_term": lambda x, n: quicksum(
+            x[0, i] + x[1, i] + x[2, i] for i in range(n)
+        ),
+        "duplicate_var": lambda x, n: quicksum(
+            x[0, i] + x[0, i] - x[0, i] for i in range(n)
+        ),
+        "weighted": lambda x, n: quicksum(
+            1.1 * x[0, i] + 2.2 * x[1, i] + 3.3 * x[2, i]
+            for i in range(n)
+        ),
+        "weighted_dot": lambda x, n: dot(
+            (coefficient for _ in range(n) for coefficient in (1.1, 2.2, 3.3)),
+            (x[row, i] for i in range(n) for row in range(3)),
         ),
     }
 
@@ -49,12 +60,12 @@ def main() -> int:
     for size in sizes:
         model = Model(f"quicksum-{size}")
         variables = model.addVars(3, size, name="x")
-        for kind, make_items in kinds.items():
+        for kind, build_expression in kinds.items():
             samples: list[float] = []
             for _ in range(args.repeat):
                 gc.collect()
                 start = time.perf_counter()
-                expression = quicksum(make_items(variables, size))
+                expression = build_expression(variables, size)
                 samples.append(time.perf_counter() - start)
                 del expression
             summary = TimingSummary.from_samples(samples)

@@ -44,7 +44,7 @@ If the environment variable cannot be set, instantiate the low-level
 ## Example
 
 ```python
-from moirspy import MOI, Model, quicksum
+from moirspy import MOI, Model, dot, quicksum
 
 model = Model("binary-example")
 x = model.addVars(3, name="x", vtype=MOI.BINARY)
@@ -52,6 +52,9 @@ x = model.addVars(3, name="x", vtype=MOI.BINARY)
 model.addConstr(x[0] + 2 * x[1] + 3 * x[2] <= 4, name="capacity")
 model.addConstr(x[0] + x[1] >= 1, name="selection")
 model.setObjective(quicksum([x[0], x[1], 2 * x[2]]), MOI.MAXIMIZE)
+# For large coefficient/variable vectors, dot(coefficients, variables) builds
+# the same affine form directly with one normalization pass.
+weighted = dot([1.0, 2.0, 3.0], [x[0], x[1], x[2]])
 model.setParam("OutputFlag", 0)
 
 model.setBackend("gurobi")
@@ -72,6 +75,7 @@ the attached backend incrementally.
   bounds, types, and names are broadcast; lists provide per-variable values.
 - `Model.addConstr(...)` and `Model.addConstrs(...)` add linear comparisons.
 - `quicksum(...)` sums any iterable of variables, linear expressions, or numbers.
+- `dot(coefficients, variables)` constructs a weighted affine expression directly.
 - `Model.setObjective(expr, MOI.MINIMIZE | MOI.MAXIMIZE)` sets the objective.
 - `Model.setParam(name, value)` stores a solver parameter.
 - `Model.setBackend("gurobi", env=None)` or `Model.setBackend("copt", env=None)`

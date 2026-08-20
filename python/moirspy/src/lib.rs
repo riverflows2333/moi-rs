@@ -30,5 +30,5 @@ mod moirspy {
     use crate::model::Model;
 
     #[pymodule_export]
-    use crate::function::quicksum;
+    use crate::function::{dot, quicksum};
 }

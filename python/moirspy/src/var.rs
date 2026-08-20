@@ -53,11 +53,11 @@ impl Var {
         afn.push_term(self.id, 1.0);
         // 判断右侧项类型，为浮点数、变量或线性表达式
         if let Ok(value) = _other.extract::<f64>() {
-            afn = afn.calculate(&ScalarAffineFn::with_constant(value), OperationType::Add);
-        } else if let Ok(var) = _other.extract::<Var>() {
+            afn.constant += value;
+        } else if let Ok(var) = _other.extract::<PyRef<'_, Var>>() {
             afn.push_term(var.id, 1.0);
-        } else if let Ok(expr) = _other.extract::<LinExpr>() {
-            afn = afn.calculate(&expr.get_fn(), OperationType::Add);
+        } else if let Ok(expr) = _other.extract::<PyRef<'_, LinExpr>>() {
+            afn.add_assign(expr.get_fn_ref());
         } else {
             panic!("Unsupported type for addition with Var");
         }
@@ -71,7 +71,7 @@ impl Var {
         afn.push_term(self.id, 1.0);
         // 判断左侧项类型，为浮点数
         if let Ok(value) = _other.extract::<f64>() {
-            afn = afn.calculate(&ScalarAffineFn::with_constant(value), OperationType::Add);
+            afn.constant += value;
         } else {
             panic!("Unsupported type for addition with Var");
         }
@@ -84,11 +84,11 @@ impl Var {
         afn.push_term(self.id, 1.0);
         // 判断右侧项类型，为浮点数、变量或线性表达式
         if let Ok(value) = _other.extract::<f64>() {
-            afn = afn.calculate(&ScalarAffineFn::with_constant(value), OperationType::Sub);
-        } else if let Ok(var) = _other.extract::<Var>() {
+            afn.constant -= value;
+        } else if let Ok(var) = _other.extract::<PyRef<'_, Var>>() {
             afn.push_term(var.id, -1.0);
-        } else if let Ok(expr) = _other.extract::<LinExpr>() {
-            afn = afn.calculate(&expr.get_fn(), OperationType::Sub);
+        } else if let Ok(expr) = _other.extract::<PyRef<'_, LinExpr>>() {
+            afn.add_scaled_assign(expr.get_fn_ref(), -1.0);
         } else {
             panic!("Unsupported type for subtraction with Var");
         }
@@ -101,7 +101,7 @@ impl Var {
         afn.push_term(self.id, -1.0);
         // 判断左侧项类型，为浮点数
         if let Ok(value) = _other.extract::<f64>() {
-            afn = afn.calculate(&ScalarAffineFn::with_constant(value), OperationType::Add);
+            afn.constant += value;
         } else {
             panic!("Unsupported type for subtraction with Var");
         }
@@ -147,11 +147,11 @@ impl Var {
         // 判断右侧项类型，为浮点数、变量或线性表达式
         if let Ok(value) = _other.extract::<f64>() {
             s = ScalarSetType::LessThan(value);
-        } else if let Ok(var) = _other.extract::<Var>() {
+        } else if let Ok(var) = _other.extract::<PyRef<'_, Var>>() {
             afn.push_term(var.id, -1.0);
             s = ScalarSetType::LessThan(0.0);
-        } else if let Ok(expr) = _other.extract::<LinExpr>() {
-            afn = afn.calculate(&expr.get_fn(), OperationType::Sub);
+        } else if let Ok(expr) = _other.extract::<PyRef<'_, LinExpr>>() {
+            afn.add_scaled_assign(expr.get_fn_ref(), -1.0);
             s = ScalarSetType::LessThan(0.0);
         } else {
             panic!("Unsupported type for comparison with Var");
@@ -168,11 +168,11 @@ impl Var {
         // 判断右侧项类型，为浮点数、变量或线性表达式
         if let Ok(value) = _other.extract::<f64>() {
             s = ScalarSetType::GreaterThan(value);
-        } else if let Ok(var) = _other.extract::<Var>() {
+        } else if let Ok(var) = _other.extract::<PyRef<'_, Var>>() {
             afn.push_term(var.id, -1.0);
             s = ScalarSetType::GreaterThan(0.0);
-        } else if let Ok(expr) = _other.extract::<LinExpr>() {
-            afn = afn.calculate(&expr.get_fn(), OperationType::Sub);
+        } else if let Ok(expr) = _other.extract::<PyRef<'_, LinExpr>>() {
+            afn.add_scaled_assign(expr.get_fn_ref(), -1.0);
             s = ScalarSetType::GreaterThan(0.0);
         } else {
             panic!("Unsupported type for comparison with Var");
@@ -189,11 +189,11 @@ impl Var {
         // 判断右侧项类型，为浮点数、变量或线性表达式
         if let Ok(value) = _other.extract::<f64>() {
             s = ScalarSetType::EqualTo(value);
-        } else if let Ok(var) = _other.extract::<Var>() {
+        } else if let Ok(var) = _other.extract::<PyRef<'_, Var>>() {
             afn.push_term(var.id, -1.0);
             s = ScalarSetType::EqualTo(0.0);
-        } else if let Ok(expr) = _other.extract::<LinExpr>() {
-            afn = afn.calculate(&expr.get_fn(), OperationType::Sub);
+        } else if let Ok(expr) = _other.extract::<PyRef<'_, LinExpr>>() {
+            afn.add_scaled_assign(expr.get_fn_ref(), -1.0);
             s = ScalarSetType::EqualTo(0.0);
         } else {
             panic!("Unsupported type for comparison with Var");

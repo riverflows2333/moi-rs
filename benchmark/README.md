@@ -88,7 +88,7 @@ and backend attachment. Its few timer calls are outside the normal benchmark pat
 unless profiling is requested.
 
 To isolate `quicksum` scaling across Var, two/three-term expressions, repeated
-variables, and a weighted objective:
+variables, and a weighted objective, and compare the direct `dot` constructor:
 
 ```powershell
 .\.venv\Scripts\python.exe -m benchmark.profile_expr --sizes 2400 4800 9600
