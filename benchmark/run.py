@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import gc
-import statistics
 import sys
 import time
 from pathlib import Path
@@ -12,6 +11,7 @@ if __package__ in (None, ""):
 
 from benchmark.builders import BUILDERS
 from benchmark.common import load_minimal_uc
+from benchmark.metrics import TimingSummary, environment_metadata
 
 
 def parse_args() -> argparse.Namespace:
@@ -29,6 +29,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--warmup", type=int, default=1)
     parser.add_argument("--repeat", type=int, default=3)
+    parser.add_argument("--metadata", action="store_true", help="print environment metadata")
     return parser.parse_args()
 
 
@@ -36,6 +37,11 @@ def main() -> int:
     args = parse_args()
     if args.warmup < 0 or args.repeat < 1:
         raise SystemExit("--warmup must be >= 0 and --repeat must be >= 1")
+
+    if args.metadata:
+        for key, value in environment_metadata().items():
+            print(f"{key}: {value}")
+        print()
 
     requested = [name.strip() for name in args.tools.split(",") if name.strip()]
     unknown = [name for name in requested if name not in BUILDERS]
@@ -78,9 +84,10 @@ def main() -> int:
             continue
 
         succeeded += 1
+        summary = TimingSummary.from_samples(samples)
         print(
-            f"{name:14} median={statistics.median(samples):.6f} s  "
-            f"min={min(samples):.6f} s  max={max(samples):.6f} s  n={len(samples)}"
+            f"{name:14} median={summary.median:.6f} s  p95={summary.p95:.6f} s  "
+            f"min={summary.minimum:.6f} s  max={summary.maximum:.6f} s  n={summary.samples}"
         )
     return 0 if succeeded else 1
 
