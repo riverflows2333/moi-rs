@@ -15,7 +15,7 @@ from benchmark.metrics import TimingSummary, environment_metadata
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Benchmark UC model construction without solving")
+    parser = argparse.ArgumentParser(description="Benchmark complete direct 2-bin UC construction without solving")
     parser.add_argument(
         "--case",
         type=Path,
@@ -53,7 +53,8 @@ def main() -> int:
     parse_seconds = time.perf_counter() - before_parse
     print(f"case: {data.case_dir}")
     print(
-        f"common input: {data.num_units} units x {data.num_periods} periods; "
+        f"common input: {data.num_units} thermal + {data.num_storages} storage "
+        f"units x {data.num_periods} periods, {len(data.sections)} sections; "
         f"{data.num_variables:,} vars, {data.num_constraints:,} constrs, "
         f"{data.num_nonzeros:,} nonzeros"
     )

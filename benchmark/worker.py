@@ -52,6 +52,8 @@ def main() -> int:
             "case": data.case_dir.name,
             "tool": args.tool,
             "units": data.num_units,
+            "storages": data.num_storages,
+            "sections": len(data.sections),
             "periods": data.num_periods,
             "variables": data.num_variables,
             "constraints": data.num_constraints,

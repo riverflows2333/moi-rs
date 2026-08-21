@@ -7,7 +7,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
-from benchmark.common import MinimalUcData
+from benchmark.common import (
+    STORAGE_BLOCKS,
+    THERMAL_BLOCKS,
+    MinimalUcData,
+    iter_constraint_groups,
+    iter_objective_terms,
+)
 
 
 @dataclass(slots=True)
@@ -31,6 +37,14 @@ def prepare_moirspy() -> Any:
     return Env(_copt_dll())
 
 
+def _block_kind(block: str) -> tuple[str, float]:
+    if block in {"thermal_x", "thermal_u", "storage_o", "storage_i"}:
+        return "B", 1.0
+    if block == "storage_soc":
+        return "C", 1.0
+    return "C", float("inf")
+
+
 def _build_moirspy(
     data: MinimalUcData,
     env: Any,
@@ -38,91 +52,58 @@ def _build_moirspy(
     attach_early: bool,
     stage_times: dict[str, float] | None = None,
 ) -> Any:
-    from moirspy import MOI, Model, quicksum
+    from moirspy import MOI, Model, dot
 
     last_mark = time.perf_counter() if stage_times is not None else 0.0
 
     def mark(stage: str) -> None:
         nonlocal last_mark
-        if stage_times is None:
-            return
-        now = time.perf_counter()
-        stage_times[stage] = stage_times.get(stage, 0.0) + now - last_mark
-        last_mark = now
+        if stage_times is not None:
+            now = time.perf_counter()
+            stage_times[stage] = stage_times.get(stage, 0.0) + now - last_mark
+            last_mark = now
 
-    g_count, t_count = data.num_units, data.num_periods
-    mode = "early" if attach_early else "late"
-    model = Model(f"minimal-uc-moirspy-{mode}")
+    model = Model(f"complete-2bin-uc-moirspy-{'early' if attach_early else 'late'}")
     mark("model")
     if attach_early:
         model.setBackend("copt", env=env)
         mark("attach")
-    on = model.addVars(g_count, t_count, lb=0.0, ub=1.0, vtype=MOI.BINARY, name="on")
-    output = model.addVars(g_count, t_count, lb=0.0, vtype=MOI.CONTINUOUS, name="p")
-    startup = model.addVars(g_count, t_count, lb=0.0, ub=1.0, vtype=MOI.BINARY, name="start")
+
+    blocks: dict[str, Any] = {}
+    for block in THERMAL_BLOCKS + STORAGE_BLOCKS:
+        kind, upper = _block_kind(block)
+        blocks[block] = model.addVars(
+            data.layout.block_sizes[block],
+            lb=0.0,
+            ub=upper,
+            vtype=MOI.BINARY if kind == "B" else MOI.CONTINUOUS,
+            name=block,
+        )
     mark("variables")
 
-    model.addConstrs(
-        (output[g, t] <= data.units[g].p_max * on[g, t] for g in range(g_count) for t in range(t_count)),
-        name="output_ub",
-    )
-    model.addConstrs(
-        (output[g, t] >= data.units[g].p_min * on[g, t] for g in range(g_count) for t in range(t_count)),
-        name="output_lb",
-    )
-    mark("output_bounds")
-    model.addConstrs(
-        (
-            startup[g, t]
-            >= on[g, t] - (data.units[g].initial_on if t == 0 else on[g, t - 1])
-            for g in range(g_count)
-            for t in range(t_count)
-        ),
-        name="startup",
-    )
-    mark("startup")
-    model.addConstrs(
-        (
-            output[g, t] - (data.units[g].initial_output if t == 0 else output[g, t - 1])
-            <= data.units[g].ramp_up
-            + data.units[g].p_max
-            * (1 - (data.units[g].initial_on if t == 0 else on[g, t - 1]))
-            for g in range(g_count)
-            for t in range(t_count)
-        ),
-        name="ramp_up",
-    )
-    model.addConstrs(
-        (
-            (data.units[g].initial_output if t == 0 else output[g, t - 1]) - output[g, t]
-            <= data.units[g].ramp_down + data.units[g].p_max * (1 - on[g, t])
-            for g in range(g_count)
-            for t in range(t_count)
-        ),
-        name="ramp_down",
-    )
-    mark("ramping")
-    model.addConstrs(
-        (quicksum(output[g, t] for g in range(g_count)) == data.loads[t] for t in range(t_count)),
-        name="balance",
-    )
-    mark("balance")
-    model.addConstrs(
-        (
-            quicksum(data.units[g].p_max * on[g, t] - output[g, t] for g in range(g_count))
-            >= data.reserve_ratio * data.loads[t]
-            for t in range(t_count)
-        ),
-        name="reserve",
-    )
-    mark("reserve")
+    def expression(row: Any) -> Any:
+        return dot(
+            (coefficient for _, coefficient in row.terms),
+            (blocks[variable.block][variable.index] for variable, _ in row.terms),
+        )
+
+    def constraint(row: Any) -> Any:
+        expr = expression(row)
+        if row.sense == "<":
+            return expr <= row.rhs
+        if row.sense == ">":
+            return expr >= row.rhs
+        return expr == row.rhs
+
+    for family, rows in iter_constraint_groups(data):
+        model.addConstrs((constraint(row) for row in rows), name=family)
+        mark(family)
+
+    objective = tuple(iter_objective_terms(data))
     model.setObjective(
-        quicksum(
-            data.units[g].marginal_cost * output[g, t]
-            + data.units[g].no_load_cost * on[g, t]
-            + data.units[g].startup_cost * startup[g, t]
-            for g in range(g_count)
-            for t in range(t_count)
+        dot(
+            (coefficient for _, coefficient in objective),
+            (blocks[variable.block][variable.index] for variable, _ in objective),
         ),
         MOI.MINIMIZE,
     )
@@ -136,30 +117,19 @@ def _build_moirspy(
 
 
 def build_moirspy_early(data: MinimalUcData, env: Any) -> Any:
-    """Attach COPT first, then incrementally forward every modeling operation."""
-
     return _build_moirspy(data, env, attach_early=True)
 
 
 def build_moirspy_late(data: MinimalUcData, env: Any) -> Any:
-    """Build in the bridge first, then replay the complete model into COPT."""
-
     return _build_moirspy(data, env, attach_early=False)
 
 
 def profile_moirspy(
     data: MinimalUcData, env: Any, *, attach_early: bool = False
 ) -> tuple[Any, dict[str, float]]:
-    """Return a model and coarse stage timings for performance diagnosis."""
-
-    stage_times: dict[str, float] = {}
-    model = _build_moirspy(
-        data,
-        env,
-        attach_early=attach_early,
-        stage_times=stage_times,
-    )
-    return model, stage_times
+    timings: dict[str, float] = {}
+    model = _build_moirspy(data, env, attach_early=attach_early, stage_times=timings)
+    return model, timings
 
 
 def prepare_moirspy_copt() -> Any:
@@ -169,88 +139,46 @@ def prepare_moirspy_copt() -> Any:
 
 
 def build_moirspy_copt(data: MinimalUcData, env: Any) -> Any:
-    """Build the same formulation through the low-level batched COPT binding."""
-
     from moirspy_copt import Model
 
-    g_count, t_count = data.num_units, data.num_periods
-    block = g_count * t_count
-    model = Model("minimal-uc-moirspy-copt", env=env)
+    model = Model("complete-2bin-uc-moirspy-copt", env=env)
     model.set_optimizer_attr("Logging", 0)
-
-    on = model.add_variables(block, vtypes=["B"] * block, lbs=[0.0] * block, ubs=[1.0] * block)
-    output = model.add_variables(block, vtypes=["C"] * block, lbs=[0.0] * block)
-    startup = model.add_variables(block, vtypes=["B"] * block, lbs=[0.0] * block, ubs=[1.0] * block)
-
-    def idx(g: int, t: int) -> int:
-        return g * t_count + t
+    blocks: dict[str, list[int]] = {}
+    for block in THERMAL_BLOCKS + STORAGE_BLOCKS:
+        kind, upper = _block_kind(block)
+        size = data.layout.block_sizes[block]
+        blocks[block] = model.add_variables(
+            size,
+            vtypes=[kind] * size,
+            lbs=[0.0] * size,
+            ubs=[upper] * size,
+        )
 
     row_vars: list[list[int]] = []
     row_coeffs: list[list[float]] = []
-    constants: list[float] = []
     senses: list[str] = []
     rhs: list[float] = []
+    for _, rows in iter_constraint_groups(data):
+        for row in rows:
+            row_vars.append([blocks[var.block][var.index] for var, _ in row.terms])
+            row_coeffs.append([coefficient for _, coefficient in row.terms])
+            senses.append(row.sense)
+            rhs.append(row.rhs)
+    model.add_constraints(row_vars, row_coeffs, [0.0] * len(rhs), senses, rhs)
 
-    def row(vars_: list[int], coeffs: list[float], sense: str, bound: float) -> None:
-        row_vars.append(vars_)
-        row_coeffs.append(coeffs)
-        constants.append(0.0)
-        senses.append(sense)
-        rhs.append(bound)
-
-    for g, unit in enumerate(data.units):
-        for t in range(t_count):
-            i = idx(g, t)
-            row([output[i], on[i]], [1.0, -unit.p_max], "<", 0.0)
-            row([output[i], on[i]], [1.0, -unit.p_min], ">", 0.0)
-            if t == 0:
-                row([startup[i], on[i]], [1.0, -1.0], ">", -float(unit.initial_on))
-                row(
-                    [output[i]],
-                    [1.0],
-                    "<",
-                    unit.initial_output + unit.ramp_up + unit.p_max * (1 - unit.initial_on),
-                )
-            else:
-                previous = idx(g, t - 1)
-                row([startup[i], on[i], on[previous]], [1.0, -1.0, 1.0], ">", 0.0)
-                row(
-                    [output[i], output[previous], on[previous]],
-                    [1.0, -1.0, unit.p_max],
-                    "<",
-                    unit.ramp_up + unit.p_max,
-                )
-            row(
-                [output[i], on[i]] if t == 0 else [output[idx(g, t - 1)], output[i], on[i]],
-                [-1.0, unit.p_max] if t == 0 else [1.0, -1.0, unit.p_max],
-                "<",
-                unit.ramp_down + unit.p_max - (unit.initial_output if t == 0 else 0.0),
-            )
-
-    for t, load in enumerate(data.loads):
-        row([output[idx(g, t)] for g in range(g_count)], [1.0] * g_count, "=", load)
-        reserve_vars: list[int] = []
-        reserve_coeffs: list[float] = []
-        for g, unit in enumerate(data.units):
-            reserve_vars.extend((on[idx(g, t)], output[idx(g, t)]))
-            reserve_coeffs.extend((unit.p_max, -1.0))
-        row(reserve_vars, reserve_coeffs, ">", data.reserve_ratio * load)
-
-    model.add_constraints(row_vars, row_coeffs, constants, senses, rhs)
-    objective_vars: list[int] = []
-    objective_coeffs: list[float] = []
-    for g, unit in enumerate(data.units):
-        for t in range(t_count):
-            i = idx(g, t)
-            objective_vars.extend((output[i], on[i], startup[i]))
-            objective_coeffs.extend((unit.marginal_cost, unit.no_load_cost, unit.startup_cost))
-    model.set_objective(objective_vars, objective_coeffs, 0.0, -1)
+    objective = tuple(iter_objective_terms(data))
+    model.set_objective(
+        [blocks[var.block][var.index] for var, _ in objective],
+        [coefficient for _, coefficient in objective],
+        0.0,
+        -1,
+    )
     model.update()
     return model
 
 
 def prepare_coptpy() -> Any:
-    dll_handles: list[Any] = []
+    handles: list[Any] = []
     try:
         import coptpy
     except ImportError:
@@ -263,82 +191,47 @@ def prepare_coptpy() -> Any:
             raise ImportError(f"COPT has no coptpy build for Python {sys.version_info.major}.{sys.version_info.minor}")
         sys.path.insert(0, str(package_dir))
         if sys.platform == "win32":
-            # The installer normally copies copt_python.dll into site-packages.
-            # Directly using the bundled module also needs its dependency folder.
-            dll_handles.append(os.add_dll_directory(str(python_dir / "deps")))
-            dll_handles.append(os.add_dll_directory(str(Path(home) / "bin")))
+            handles.append(os.add_dll_directory(str(python_dir / "deps")))
+            handles.append(os.add_dll_directory(str(Path(home) / "bin")))
         import coptpy
-
-    return coptpy.Envr(), dll_handles
+    return coptpy.Envr(), handles
 
 
 def build_coptpy(data: MinimalUcData, env: Any) -> Any:
     import coptpy
-    from coptpy import COPT
+    from coptpy import COPT, ExprBuilder
 
-    g_count, t_count = data.num_units, data.num_periods
-    copt_env, _dll_handles = env
-    model = copt_env.createModel("minimal-uc-coptpy")
+    copt_env, _handles = env
+    model = copt_env.createModel("complete-2bin-uc-coptpy")
     model.setParam(COPT.Param.Logging, 0)
-    on = model.addVars(g_count, t_count, lb=0.0, ub=1.0, vtype=COPT.BINARY, nameprefix="on")
-    output = model.addVars(g_count, t_count, lb=0.0, vtype=COPT.CONTINUOUS, nameprefix="p")
-    startup = model.addVars(g_count, t_count, lb=0.0, ub=1.0, vtype=COPT.BINARY, nameprefix="start")
+    blocks: dict[str, Any] = {}
+    for block in THERMAL_BLOCKS + STORAGE_BLOCKS:
+        kind, upper = _block_kind(block)
+        blocks[block] = model.addVars(
+            data.layout.block_sizes[block],
+            lb=0.0,
+            ub=upper,
+            vtype=COPT.BINARY if kind == "B" else COPT.CONTINUOUS,
+            nameprefix=block,
+        )
 
-    model.addConstrs(
-        (output[g, t] <= data.units[g].p_max * on[g, t] for g in range(g_count) for t in range(t_count)),
-        nameprefix="output_ub",
-    )
-    model.addConstrs(
-        (output[g, t] >= data.units[g].p_min * on[g, t] for g in range(g_count) for t in range(t_count)),
-        nameprefix="output_lb",
-    )
-    model.addConstrs(
-        (
-            startup[g, t] >= on[g, t] - (data.units[g].initial_on if t == 0 else on[g, t - 1])
-            for g in range(g_count)
-            for t in range(t_count)
-        ),
-        nameprefix="startup",
-    )
-    model.addConstrs(
-        (
-            output[g, t] - (data.units[g].initial_output if t == 0 else output[g, t - 1])
-            <= data.units[g].ramp_up
-            + data.units[g].p_max
-            * (1 - (data.units[g].initial_on if t == 0 else on[g, t - 1]))
-            for g in range(g_count)
-            for t in range(t_count)
-        ),
-        nameprefix="ramp_up",
-    )
-    model.addConstrs(
-        (
-            (data.units[g].initial_output if t == 0 else output[g, t - 1]) - output[g, t]
-            <= data.units[g].ramp_down + data.units[g].p_max * (1 - on[g, t])
-            for g in range(g_count)
-            for t in range(t_count)
-        ),
-        nameprefix="ramp_down",
-    )
-    model.addConstrs(
-        (coptpy.quicksum(output[g, t] for g in range(g_count)) == data.loads[t] for t in range(t_count)),
-        nameprefix="balance",
-    )
-    model.addConstrs(
-        (
-            coptpy.quicksum(data.units[g].p_max * on[g, t] - output[g, t] for g in range(g_count))
-            >= data.reserve_ratio * data.loads[t]
-            for t in range(t_count)
-        ),
-        nameprefix="reserve",
-    )
+    def constraint(row: Any) -> Any:
+        variables = [blocks[var.block][var.index] for var, _ in row.terms]
+        coefficients = [coefficient for _, coefficient in row.terms]
+        expr = ExprBuilder(variables, coefficients)
+        if row.sense == "<":
+            return expr <= row.rhs
+        if row.sense == ">":
+            return expr >= row.rhs
+        return expr == row.rhs
+
+    for family, rows in iter_constraint_groups(data):
+        model.addConstrs((constraint(row) for row in rows), nameprefix=family)
+    objective = tuple(iter_objective_terms(data))
     model.setObjective(
-        coptpy.quicksum(
-            data.units[g].marginal_cost * output[g, t]
-            + data.units[g].no_load_cost * on[g, t]
-            + data.units[g].startup_cost * startup[g, t]
-            for g in range(g_count)
-            for t in range(t_count)
+        ExprBuilder(
+            [blocks[var.block][var.index] for var, _ in objective],
+            [coefficient for _, coefficient in objective],
         ),
         COPT.MINIMIZE,
     )

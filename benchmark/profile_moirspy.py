@@ -14,22 +14,11 @@ from benchmark.builders import (
     prepare_moirspy,
     profile_moirspy,
 )
-from benchmark.common import load_minimal_uc
+from benchmark.common import CONSTRAINT_FAMILIES, load_minimal_uc
 from benchmark.metrics import TimingSummary
 
 
-STAGES = (
-    "model",
-    "variables",
-    "output_bounds",
-    "startup",
-    "ramping",
-    "balance",
-    "reserve",
-    "objective",
-    "parameter",
-    "attach",
-)
+STAGES = ("model", "variables", *CONSTRAINT_FAMILIES, "objective", "parameter", "attach")
 
 
 def main() -> int:

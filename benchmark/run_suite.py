@@ -12,13 +12,20 @@ from benchmark.worker import RESULT_PREFIX
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Run isolated UC benchmark cases")
+    parser = argparse.ArgumentParser(
+        description="Run isolated construction-only benchmarks for the complete 2-bin UC model"
+    )
     parser.add_argument("--root", type=Path, default=Path("input/phys/effi"))
-    parser.add_argument("--cases", nargs="+", default=["1-1", "1-2", "1-3"])
+    parser.add_argument(
+        "--cases",
+        nargs="+",
+        default=[f"1-{index}" for index in range(1, 6)],
+    )
     parser.add_argument("--tools", default=",".join(BUILDERS))
     parser.add_argument("--warmup", type=int, default=1)
     parser.add_argument("--repeat", type=int, default=5)
     parser.add_argument("--json", type=Path, help="write complete metadata and raw samples")
+    parser.add_argument("--markdown", type=Path, help="write the rendered comparison table")
     args = parser.parse_args()
 
     tools = [name.strip() for name in args.tools.split(",") if name.strip()]
@@ -40,13 +47,17 @@ def main() -> int:
                 failures += 1
 
     metadata = environment_metadata()
-    print_markdown(metadata, results)
+    report = markdown_report(metadata, results)
+    print(report)
     if args.json:
         args.json.parent.mkdir(parents=True, exist_ok=True)
         args.json.write_text(
             json_dumps({"metadata": metadata, "results": results}) + "\n",
             encoding="utf-8",
         )
+    if args.markdown:
+        args.markdown.parent.mkdir(parents=True, exist_ok=True)
+        args.markdown.write_text(report + "\n", encoding="utf-8")
     return 1 if failures == len(results) else 0
 
 
@@ -76,33 +87,71 @@ def run_worker(case: Path, tool: str, warmup: int, repeat: int) -> dict[str, obj
     }
 
 
-def print_markdown(metadata: dict[str, object], results: list[dict[str, object]]) -> None:
-    print(f"Python {metadata['python']} | {metadata['platform']} | rustc: {metadata['rustc']}")
+def markdown_report(metadata: dict[str, object], results: list[dict[str, object]]) -> str:
+    lines = [
+        "# Complete 2-bin UC model-construction benchmark",
+        "",
+        "> Timed region: in-memory prepared input to native COPT model ready; solve is excluded.",
+        "",
+        f"Python {metadata['python']} | {metadata['platform']} | rustc: {metadata['rustc']}",
+    ]
     artifacts = metadata["extension_artifacts"]
     profiles = ", ".join(
         f"{name}={details['inferred_profile']}"
         for name, details in artifacts.items()
         if details is not None
     )
-    print(f"{metadata['copt_version']} | extension profiles: {profiles or 'unknown'}")
-    print()
-    print("| Case | Tool | Vars | Constrs | Median (s) | p95 (s) | Peak RSS (MiB) | Peak delta (MiB) | n |")
-    print("|---|---|---:|---:|---:|---:|---:|---:|---:|")
+    successful = [result for result in results if result.get("status") == "ok"]
+    cases = list(dict.fromkeys(str(result["case"]) for result in successful))
+    tools = list(dict.fromkeys(str(result["tool"]) for result in successful))
+    lookup = {(str(result["case"]), str(result["tool"])): result for result in successful}
+    lines.extend(
+        [
+            f"{metadata['copt_version']} | extension profiles: {profiles or 'unknown'}",
+            "",
+            "## Median construction time (seconds)",
+            "",
+            "| Case | Vars | Constrs | " + " | ".join(tools) + " |",
+            "|---|---:|---:|" + "---:|" * len(tools),
+        ]
+    )
+    for case in cases:
+        available = [lookup[(case, tool)] for tool in tools if (case, tool) in lookup]
+        variables = available[0]["variables"] if available else "-"
+        constraints = available[0]["constraints"] if available else "-"
+        timings = []
+        for tool in tools:
+            result = lookup.get((case, tool))
+            timings.append("-" if result is None else f"{result['timing']['median']:.6f}")
+        lines.append(
+            f"| {case} | {variables:,} | {constraints:,} | " + " | ".join(timings) + " |"
+        )
+    lines.extend(
+        [
+            "",
+            "## Detailed samples and memory",
+            "",
+            "| Case | Tool | Vars | Constrs | Nonzeros | Median (s) | p95 (s) | Peak RSS (MiB) | Peak delta (MiB) | n |",
+            "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|",
+        ]
+    )
     for result in results:
         if result.get("status") != "ok":
-            print(
-                f"| {result.get('case', '?')} | {result.get('tool', '?')} | - | - | "
+            lines.append(
+                f"| {result.get('case', '?')} | {result.get('tool', '?')} | - | - | - | "
                 f"{result.get('status')} | - | - | - | - |"
             )
             continue
         timing = result["timing"]
         memory = result["memory"]
-        print(
+        lines.append(
             f"| {result['case']} | {result['tool']} | {result['variables']:,} | "
-            f"{result['constraints']:,} | {timing['median']:.6f} | {timing['p95']:.6f} | "
+            f"{result['constraints']:,} | {result['nonzeros']:,} | "
+            f"{timing['median']:.6f} | {timing['p95']:.6f} | "
             f"{mib(memory['peak_rss_bytes'])} | {mib(memory['peak_delta_bytes'])} | "
             f"{timing['samples']} |"
         )
+    return "\n".join(lines)
 
 
 def mib(value: int | None) -> str:
