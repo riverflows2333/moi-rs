@@ -1,9 +1,9 @@
 use moi_bridge::BridgeOptimizer;
 use moi_core::{
-    AffineTerm, AttrValue, ModelAttr, ModelSense, ScalarAffineFn, ScalarFunctionType,
+    AffineTerm, AttrValue, ModelAttr, ModelSense, MoiError, ScalarAffineFn, ScalarFunctionType,
     ScalarSetType, VarId,
 };
-use moi_solver_api::{BoundType, ModelLike, NameType};
+use moi_solver_api::{BoundType, ModelLike, NameType, Optimizer};
 
 #[test]
 fn invalid_batch_lengths_do_not_modify_the_model() {
@@ -67,4 +67,65 @@ fn single_addition_uses_exact_name() {
         .unwrap();
 
     assert_eq!(bridge.get_var_name_by_id(id).as_deref(), Some("x"));
+}
+
+#[test]
+fn invalid_variable_metadata_and_nonfinite_functions_are_rejected() {
+    let mut bridge = BridgeOptimizer::new();
+
+    assert!(
+        bridge
+            .add_variable(Some("bad\0name"), None, None, None)
+            .is_err()
+    );
+    assert!(
+        bridge
+            .add_variable(Some("x"), Some('Q'), None, None)
+            .is_err()
+    );
+    assert!(
+        bridge
+            .add_variable(Some("x"), None, Some(f64::NAN), None)
+            .is_err()
+    );
+    assert!(bridge.vars.is_empty());
+
+    let variable = bridge
+        .add_variable(Some("x"), Some('C'), Some(0.0), Some(1.0))
+        .unwrap();
+    let invalid_function = ScalarFunctionType::Affine(ScalarAffineFn {
+        terms: vec![AffineTerm {
+            var: variable,
+            coeff: f64::INFINITY,
+        }],
+        constant: 0.0,
+    });
+    assert!(
+        bridge
+            .add_constraint(invalid_function, ScalarSetType::LessThan(1.0), None)
+            .is_err()
+    );
+    assert!(
+        bridge
+            .add_constraint(
+                ScalarFunctionType::Variable(variable),
+                ScalarSetType::LessThan(f64::NAN),
+                None,
+            )
+            .is_err()
+    );
+    assert!(bridge.constrs.is_empty());
+}
+
+#[test]
+fn result_getters_distinguish_invalid_ids_from_missing_results() {
+    let mut bridge = BridgeOptimizer::new();
+    let variable = bridge.add_variable(None, None, None, None).unwrap();
+
+    assert_eq!(bridge.get_var_value(variable).unwrap(), None);
+    assert!(matches!(
+        bridge.get_var_value(VarId(99)),
+        Err(MoiError::InvalidVariableIndex(99))
+    ));
+    assert_eq!(bridge.get_objective_value().unwrap(), None);
 }

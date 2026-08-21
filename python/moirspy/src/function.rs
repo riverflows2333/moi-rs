@@ -1,4 +1,5 @@
 use crate::expr::LinExpr;
+use crate::utils::ensure_finite;
 use crate::var::Var;
 use moi_core::*;
 use pyo3::prelude::*;
@@ -13,7 +14,7 @@ pub fn quicksum(generator: &Bound<'_, PyAny>) -> PyResult<LinExpr> {
         } else if let Ok(var) = item.extract::<PyRef<'_, Var>>() {
             f.push_term(var.get_id(), 1.0);
         } else if let Ok(value) = item.extract::<f64>() {
-            f.constant += value;
+            f.constant += ensure_finite(value, "quicksum item")?;
         } else {
             return Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(
                 "Item is not a LinExpr, Var, or f64",
@@ -38,6 +39,7 @@ pub fn dot(coefficients: &Bound<'_, PyAny>, variables: &Bound<'_, PyAny>) -> PyR
                         "dot coefficients must contain only numbers",
                     )
                 })?;
+                let coefficient = ensure_finite(coefficient, "dot coefficient")?;
                 let variable = variable?.extract::<PyRef<'_, Var>>().map_err(|_| {
                     PyErr::new::<pyo3::exceptions::PyTypeError, _>(
                         "dot variables must contain only Var objects",

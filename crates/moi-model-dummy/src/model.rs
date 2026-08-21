@@ -204,7 +204,23 @@ impl DummyModel {
         state: &RecordingState,
         function: &ScalarFunctionType,
     ) -> Result<(), MoiError> {
-        if let Some(variable) = scalar_function_to_linear(function)?
+        let linear = scalar_function_to_linear(function)?;
+        if !linear.constant.is_finite() {
+            return Err(MoiError::InvalidInput(
+                "affine function constant must be finite".into(),
+            ));
+        }
+        if let Some((index, _)) = linear
+            .coefficients
+            .iter()
+            .enumerate()
+            .find(|(_, coefficient)| !coefficient.is_finite())
+        {
+            return Err(MoiError::InvalidInput(format!(
+                "affine coefficient at index {index} must be finite"
+            )));
+        }
+        if let Some(variable) = linear
             .variables
             .into_iter()
             .find(|variable| variable.0 >= state.variables.len())
@@ -212,6 +228,37 @@ impl DummyModel {
             return Err(MoiError::InvalidVariableIndex(variable.0));
         }
         Ok(())
+    }
+
+    fn validate_set(set: &ScalarSetType) -> Result<(), MoiError> {
+        let bounds = moi_solver_api::scalar_set_to_bounds(set);
+        let lower = bounds.lower;
+        let upper = bounds.upper;
+        if lower.is_some_and(|value| !value.is_finite())
+            || upper.is_some_and(|value| !value.is_finite())
+        {
+            return Err(MoiError::InvalidInput(
+                "constraint bounds must be finite".into(),
+            ));
+        }
+        if let (Some(lower), Some(upper)) = (lower, upper)
+            && lower > upper
+        {
+            return Err(MoiError::InvalidInput(format!(
+                "constraint lower bound {lower} exceeds upper bound {upper}"
+            )));
+        }
+        Ok(())
+    }
+
+    fn validate_name(name: &str, field: &str) -> Result<(), MoiError> {
+        if name.contains('\0') {
+            Err(MoiError::InvalidName(format!(
+                "{field} contains an embedded NUL byte"
+            )))
+        } else {
+            Ok(())
+        }
     }
 
     fn invalidate_solution(state: &mut RecordingState) {
@@ -265,16 +312,35 @@ impl ModelLike for DummyModel {
             }
             None => vec![f64::INFINITY; n],
         };
-        if let Some(index) = (0..n).find(|&index| lbs[index] > ubs[index]) {
-            return Err(MoiError::InvalidInput(format!(
-                "lower bound {} exceeds upper bound {} for variable {index}",
-                lbs[index], ubs[index]
-            )));
+        for (index, name) in names.iter().enumerate() {
+            Self::validate_name(name, &format!("variable name at index {index}"))?;
+        }
+        for (index, variable_type) in vtypes.iter().enumerate() {
+            if !matches!(variable_type, 'C' | 'B' | 'I') {
+                return Err(MoiError::InvalidInput(format!(
+                    "variable type at index {index} must be 'C', 'B', or 'I', got '{variable_type}'"
+                )));
+            }
+        }
+        for (index, (lower, upper)) in lbs.iter().zip(&ubs).enumerate() {
+            if lower.is_nan() || upper.is_nan() {
+                return Err(MoiError::InvalidInput(format!(
+                    "variable bounds at index {index} cannot contain NaN"
+                )));
+            }
+            if lower > upper {
+                return Err(MoiError::InvalidInput(format!(
+                    "lower bound {lower} exceeds upper bound {upper} for variable {index}"
+                )));
+            }
         }
 
         let mut state = self.handle.lock()?;
         Self::maybe_fail(&mut state, RecordedOperation::AddVariables)?;
         let start = state.variables.len();
+        let end = start
+            .checked_add(n)
+            .ok_or_else(|| MoiError::InvalidInput("variable count overflow".into()))?;
         let variables = (0..n)
             .map(|offset| VarInfo {
                 col_index: start + offset,
@@ -285,7 +351,7 @@ impl ModelLike for DummyModel {
                 value: None,
             })
             .collect::<Vec<_>>();
-        let ids = (start..start + n).map(VarId).collect::<Vec<_>>();
+        let ids = (start..end).map(VarId).collect::<Vec<_>>();
         state.variables.extend(variables.clone());
         state.calls.push(RecordedCall::AddVariables { variables });
         Self::invalidate_solution(&mut state);
@@ -308,11 +374,18 @@ impl ModelLike for DummyModel {
         };
 
         let mut state = self.handle.lock()?;
-        for function in &functions {
+        for (index, name) in names.iter().enumerate() {
+            Self::validate_name(name, &format!("constraint name at index {index}"))?;
+        }
+        for (function, set) in functions.iter().zip(&sets) {
             Self::validate_function(&state, function)?;
+            Self::validate_set(set)?;
         }
         Self::maybe_fail(&mut state, RecordedOperation::AddConstraints)?;
         let start = state.constraints.len();
+        let end = start
+            .checked_add(functions.len())
+            .ok_or_else(|| MoiError::InvalidInput("constraint count overflow".into()))?;
         let constraints = functions
             .into_iter()
             .zip(sets)
@@ -325,9 +398,7 @@ impl ModelLike for DummyModel {
                 s,
             })
             .collect::<Vec<_>>();
-        let ids = (start..start + constraints.len())
-            .map(ConstrId)
-            .collect::<Vec<_>>();
+        let ids = (start..end).map(ConstrId).collect::<Vec<_>>();
         state.constraints.extend(constraints.clone());
         state
             .calls
@@ -397,6 +468,7 @@ impl ModelLike for DummyModel {
                 self.set_objective(function, sense)
             }
             (ModelAttr::ModelName, AttrValue::String(name)) => {
+                Self::validate_name(&name, "model name")?;
                 let mut state = self.handle.lock()?;
                 Self::maybe_fail(&mut state, RecordedOperation::SetModelAttr)?;
                 state.name = name.clone();
@@ -438,6 +510,19 @@ impl ModelLike for DummyModel {
         if attr == OptimizerAttr::SolverName {
             return Err(MoiError::SetAttributeNotAllowed);
         }
+        if let OptimizerAttr::Raw(name) = &attr {
+            Self::validate_name(name, "optimizer parameter name")?;
+        }
+        if let AttrValue::Float(value) = &value
+            && !value.is_finite()
+        {
+            return Err(MoiError::InvalidInput(
+                "optimizer parameter value must be finite".into(),
+            ));
+        }
+        if let AttrValue::String(value) = &value {
+            Self::validate_name(value, "optimizer parameter string value")?;
+        }
         let mut state = self.handle.lock()?;
         Self::maybe_fail(&mut state, RecordedOperation::SetOptimizerAttr)?;
         state.optimizer_attrs.insert(attr.clone(), value.clone());
@@ -462,16 +547,19 @@ impl Optimizer for DummyModel {
         Err(MoiError::UnsupportedAttribute)
     }
 
-    fn get_var_value(&self, variable: VarId) -> Option<f64> {
-        let state = self.handle.state.lock().ok()?;
-        state
+    fn get_var_value(&self, variable: VarId) -> Result<Option<f64>, MoiError> {
+        let state = self.handle.lock()?;
+        if variable.0 >= state.variables.len() {
+            return Err(MoiError::InvalidVariableIndex(variable.0));
+        }
+        Ok(state
             .optimized
             .then(|| state.variable_values.get(&variable).copied())
-            .flatten()
+            .flatten())
     }
 
-    fn get_objective_value(&self) -> Option<f64> {
-        let state = self.handle.state.lock().ok()?;
-        state.optimized.then_some(state.objective_value).flatten()
+    fn get_objective_value(&self) -> Result<Option<f64>, MoiError> {
+        let state = self.handle.lock()?;
+        Ok(state.optimized.then_some(state.objective_value).flatten())
     }
 }

@@ -36,8 +36,8 @@ impl Model {
         vtype: Option<VarType>,
         name: &str,
     ) -> PyResult<Var> {
-        let _ = obj;
-        let mut model = self.model.lock().unwrap();
+        validate_objective_coefficients(&[obj])?;
+        let mut model = lock_bridge(&self.model)?;
         let var_id = model
             .add_variable(
                 Some(name),
@@ -65,8 +65,28 @@ impl Model {
         name: Option<&Bound<'py, PyAny>>,
     ) -> PyResult<Vars> {
         let shape_vec: Vec<usize> = indices.extract()?;
-
-        let num_vars = shape_vec.iter().product();
+        if shape_vec.is_empty() {
+            return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                "addVars requires at least one dimension",
+            ));
+        }
+        if shape_vec.contains(&0) {
+            return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                "addVars dimensions must be positive",
+            ));
+        }
+        let num_vars = shape_vec.iter().try_fold(1usize, |product, dimension| {
+            product.checked_mul(*dimension).ok_or_else(|| {
+                PyErr::new::<pyo3::exceptions::PyOverflowError, _>(
+                    "addVars shape product exceeds usize range",
+                )
+            })
+        })?;
+        if num_vars > i32::MAX as usize {
+            return Err(PyErr::new::<pyo3::exceptions::PyOverflowError, _>(
+                "addVars shape product exceeds the solver index range",
+            ));
+        }
         let lb_param = lb
             .map(Param::from_py)
             .transpose()?
@@ -75,11 +95,18 @@ impl Model {
             .map(Param::from_py)
             .transpose()?
             .unwrap_or(Param::Vector(vec![f64::INFINITY; num_vars]));
-        // TODO：目前暂不实现添加目标函数当中的参数，后续可以考虑添加一个专门的接口来设置目标函数参数
-        let _ = obj
+        let obj_param = obj
             .map(Param::from_py)
             .transpose()?
             .unwrap_or(Param::Vector(vec![0.0; num_vars]));
+        let objective_coefficients = obj_param.to_vec(Some(num_vars));
+        if objective_coefficients.len() != num_vars {
+            return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                "objective coefficients have length {}, expected {num_vars}",
+                objective_coefficients.len()
+            )));
+        }
+        validate_objective_coefficients(&objective_coefficients)?;
         let vtype_param = vtype
             .map(Param::from_py)
             .transpose()?
@@ -95,7 +122,7 @@ impl Model {
         } else {
             name_param
         };
-        let mut model = self.model.lock().unwrap();
+        let mut model = lock_bridge(&self.model)?;
         let varids = model
             .add_variables(
                 num_vars,
@@ -125,7 +152,7 @@ impl Model {
     fn add_constr(&mut self, constr: &Bound<'_, Constr>, name: Option<&str>) -> PyResult<()> {
         let constr: Constr = constr.extract()?;
 
-        let mut model = self.model.lock().unwrap();
+        let mut model = lock_bridge(&self.model)?;
         model
             .add_constraint(constr.get_f(), constr.get_s(), name.map(str::to_string))
             .map_err(to_py_runtime_error)?;
@@ -163,7 +190,7 @@ impl Model {
             name_param
         };
 
-        let mut model = self.model.lock().unwrap();
+        let mut model = lock_bridge(&self.model)?;
         model
             .add_constraints(fs, ss, Some(name_param.to_vec(Some(count))))
             .map_err(to_py_runtime_error)?;
@@ -172,7 +199,7 @@ impl Model {
     #[pyo3(signature = (expr, sense),name="setObjective")]
     fn set_objective(&mut self, expr: &Bound<'_, PyAny>, sense: Sense) -> PyResult<()> {
         let obj_expr = expr.extract::<LinExpr>()?;
-        let mut model = self.model.lock().unwrap();
+        let mut model = lock_bridge(&self.model)?;
         model
             .set_objective(
                 ScalarFunctionType::Affine(obj_expr.get_fn()),
@@ -202,13 +229,10 @@ impl Model {
             ));
         };
 
-        let mut model = self.model.lock().unwrap();
-        model.set_optimizer_attr(attr, val).map_err(|e| {
-            PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
-                "Failed to set optimizer attr: {:?}",
-                e
-            ))
-        })?;
+        let mut model = lock_bridge(&self.model)?;
+        model
+            .set_optimizer_attr(attr, val)
+            .map_err(to_py_runtime_error)?;
         Ok(())
     }
 
@@ -232,7 +256,7 @@ impl Model {
         use crate::py_backend::PyBackend;
         let py_backend = Box::new(PyBackend::new(model_instance.clone().into()));
 
-        let mut bridge = self.model.lock().unwrap();
+        let mut bridge = lock_bridge(&self.model)?;
         bridge
             .attach_backend(py_backend)
             .map_err(to_py_runtime_error)?;
@@ -242,14 +266,8 @@ impl Model {
     }
     // 调用底层求解器进行优化
     fn optimize(&mut self, _py: Python) -> PyResult<()> {
-        let mut bridge = self.model.lock().unwrap();
-        match bridge.optimize() {
-            Ok(_) => Ok(()),
-            Err(e) => Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
-                "{:?}",
-                e
-            ))),
-        }
+        let mut bridge = lock_bridge(&self.model)?;
+        bridge.optimize().map(|_| ()).map_err(to_py_runtime_error)
     }
     fn __str__(&self) -> PyResult<String> {
         Ok(format!("Model(name={})", self.name))
@@ -257,11 +275,21 @@ impl Model {
     #[getter]
     #[pyo3(name = "ObjVal")]
     pub fn get_objval(&self) -> PyResult<Option<f64>> {
-        let bridge = self.model.lock().unwrap();
-        Ok(bridge.get_objective_value())
+        let bridge = lock_bridge(&self.model)?;
+        bridge.get_objective_value().map_err(to_py_runtime_error)
     }
 }
 
-fn to_py_runtime_error(error: MoiError) -> PyErr {
-    PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(error.to_string())
+fn validate_objective_coefficients(values: &[f64]) -> PyResult<()> {
+    if values.iter().any(|value| !value.is_finite()) {
+        return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+            "obj coefficients must be finite",
+        ));
+    }
+    if values.iter().any(|value| *value != 0.0) {
+        return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+            "nonzero obj coefficients are not supported; use setObjective instead",
+        ));
+    }
+    Ok(())
 }

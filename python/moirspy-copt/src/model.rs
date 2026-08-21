@@ -159,10 +159,14 @@ impl Model {
         sense: i32,
     ) -> PyResult<()> {
         ensure_py_len(coeffs.len(), vars.len(), "objective coefficients")?;
-        let sense = if sense == 1 {
-            ModelSense::Maximize
-        } else {
-            ModelSense::Minimize
+        let sense = match sense {
+            1 => ModelSense::Maximize,
+            -1 => ModelSense::Minimize,
+            _ => {
+                return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                    "objective sense must be 1 (maximize) or -1 (minimize), got {sense}"
+                )));
+            }
         };
         self.optimizer
             .set_objective(affine_function(&vars, &coeffs, constant), sense)
@@ -180,12 +184,16 @@ impl Model {
             .map_err(to_py_runtime_error)
     }
 
-    pub fn get_var_value(&self, var_id: usize) -> Option<f64> {
-        self.optimizer.get_var_value(VarId(var_id))
+    pub fn get_var_value(&self, var_id: usize) -> PyResult<Option<f64>> {
+        self.optimizer
+            .get_var_value(VarId(var_id))
+            .map_err(to_py_runtime_error)
     }
 
-    pub fn get_objective_value(&self) -> Option<f64> {
-        self.optimizer.get_objective_value()
+    pub fn get_objective_value(&self) -> PyResult<Option<f64>> {
+        self.optimizer
+            .get_objective_value()
+            .map_err(to_py_runtime_error)
     }
 
     pub fn set_optimizer_attr(&mut self, attr: String, value: &Bound<'_, PyAny>) -> PyResult<()> {

@@ -62,7 +62,7 @@ fn test_bridge_optimizer() {
     bridge.attach_backend(Box::new(solver)).unwrap();
     let status = bridge.optimize().unwrap();
     assert_eq!(status, SolveStatus::Optimal);
-    assert_eq!(bridge.get_var_value(var_id1), Some(1.0));
-    assert_eq!(bridge.get_var_value(var_id2), Some(0.0));
-    assert_eq!(bridge.get_var_value(var_id3), Some(1.0));
+    assert_eq!(bridge.get_var_value(var_id1).unwrap(), Some(1.0));
+    assert_eq!(bridge.get_var_value(var_id2).unwrap(), Some(0.0));
+    assert_eq!(bridge.get_var_value(var_id3).unwrap(), Some(1.0));
 }

@@ -34,7 +34,7 @@ impl Env {
             .lock()
             .map_err(|_| environment_lock_error())?
             .set_param(name, value)
-            .map_err(to_py_runtime_error)
+            .map_err(to_py_error)
     }
 
     fn start(&self) -> PyResult<()> {
@@ -42,7 +42,7 @@ impl Env {
             .lock()
             .map_err(|_| environment_lock_error())?
             .start()
-            .map_err(to_py_runtime_error)
+            .map_err(to_py_error)
     }
 
     #[getter]
@@ -92,6 +92,24 @@ fn environment_lock_error() -> PyErr {
     PyErr::new::<pyo3::exceptions::PyRuntimeError, _>("Gurobi environment lock is poisoned")
 }
 
-fn to_py_runtime_error(error: moi_core::MoiError) -> PyErr {
-    PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(error.to_string())
+pub(crate) fn to_py_error(error: moi_core::MoiError) -> PyErr {
+    let message = error.to_string();
+    match error {
+        moi_core::MoiError::InvalidInput(_)
+        | moi_core::MoiError::InvalidVariableIndex(_)
+        | moi_core::MoiError::InvalidName(_) => {
+            PyErr::new::<pyo3::exceptions::PyValueError, _>(message)
+        }
+        moi_core::MoiError::UnsupportedConstraint { .. }
+        | moi_core::MoiError::AddConstraintNotAllowed
+        | moi_core::MoiError::UnsupportedAttribute
+        | moi_core::MoiError::SetAttributeNotAllowed
+        | moi_core::MoiError::ScalarFunctionConstantNotZero { .. } => {
+            PyErr::new::<pyo3::exceptions::PyNotImplementedError, _>(message)
+        }
+        moi_core::MoiError::BackendState(_)
+        | moi_core::MoiError::BackendProtocol(_)
+        | moi_core::MoiError::NativeSolver { .. }
+        | moi_core::MoiError::Msg(_) => PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(message),
+    }
 }

@@ -29,7 +29,18 @@ pub fn scalar_constraint_to_grb(
         }
     }
     let linear = scalar_function_to_linear(&constraint.f)?;
+    validate_linear_values(&linear.coefficients, linear.constant, "constraint")?;
+    if !rhs.is_finite() {
+        return Err(MoiError::InvalidInput(
+            "constraint right-hand side must be finite".into(),
+        ));
+    }
     rhs -= linear.constant;
+    if !rhs.is_finite() {
+        return Err(MoiError::InvalidInput(
+            "shifted constraint right-hand side must be finite".into(),
+        ));
+    }
     Ok((linear.variables, linear.coefficients, sense, rhs))
 }
 
@@ -38,7 +49,26 @@ pub fn scalar_function_to_grb(
     function: &ScalarFunctionType,
 ) -> Result<(Vec<VarId>, Vec<f64>, f64), MoiError> {
     let linear = scalar_function_to_linear(function)?;
+    validate_linear_values(&linear.coefficients, linear.constant, "objective")?;
     Ok((linear.variables, linear.coefficients, linear.constant))
+}
+
+fn validate_linear_values(
+    coefficients: &[f64],
+    constant: f64,
+    field: &str,
+) -> Result<(), MoiError> {
+    if !constant.is_finite() {
+        return Err(MoiError::InvalidInput(format!(
+            "{field} constant must be finite"
+        )));
+    }
+    if coefficients.iter().any(|value| !value.is_finite()) {
+        return Err(MoiError::InvalidInput(format!(
+            "{field} coefficients must be finite"
+        )));
+    }
+    Ok(())
 }
 
 // 通过ConstraintInfo构建Gurobi格式

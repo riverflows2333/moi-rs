@@ -1,7 +1,51 @@
 use moi_bridge::BridgeOptimizer;
+use moi_core::MoiError;
 use pyo3::prelude::*;
+use std::sync::MutexGuard;
 use std::sync::{Arc, Mutex};
 pub type SharedBridge = Arc<Mutex<BridgeOptimizer>>;
+
+pub fn lock_bridge(bridge: &SharedBridge) -> PyResult<MutexGuard<'_, BridgeOptimizer>> {
+    bridge.lock().map_err(|_| {
+        PyErr::new::<pyo3::exceptions::PyRuntimeError, _>("model state lock is poisoned")
+    })
+}
+
+pub fn to_py_runtime_error(error: MoiError) -> PyErr {
+    let message = error.to_string();
+    match error {
+        MoiError::InvalidInput(_)
+        | MoiError::InvalidVariableIndex(_)
+        | MoiError::InvalidName(_) => PyErr::new::<pyo3::exceptions::PyValueError, _>(message),
+        MoiError::UnsupportedConstraint { .. }
+        | MoiError::AddConstraintNotAllowed
+        | MoiError::UnsupportedAttribute
+        | MoiError::SetAttributeNotAllowed
+        | MoiError::ScalarFunctionConstantNotZero { .. } => {
+            PyErr::new::<pyo3::exceptions::PyNotImplementedError, _>(message)
+        }
+        MoiError::BackendState(_)
+        | MoiError::BackendProtocol(_)
+        | MoiError::NativeSolver { .. }
+        | MoiError::Msg(_) => PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(message),
+    }
+}
+
+pub fn ensure_finite(value: f64, field: &str) -> PyResult<f64> {
+    if value.is_finite() {
+        Ok(value)
+    } else {
+        Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+            "{field} must be finite"
+        )))
+    }
+}
+
+pub fn operand_type_error(operation: &str, expected: &str) -> PyErr {
+    PyErr::new::<pyo3::exceptions::PyTypeError, _>(format!(
+        "unsupported operand for {operation}; expected {expected}"
+    ))
+}
 #[derive(Clone, Debug)]
 pub enum Param<T> {
     Scalar(T),

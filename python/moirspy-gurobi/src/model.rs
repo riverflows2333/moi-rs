@@ -1,4 +1,4 @@
-use crate::env::{Env, attr_value_from_py, load_api};
+use crate::env::{Env, attr_value_from_py, load_api, to_py_error};
 use moi_core::*;
 use moi_solver_api::*;
 use moi_solver_gurobi::*;
@@ -48,7 +48,7 @@ impl Model {
         self.optimizer
             .add_variable(name, vtype, lb, ub)
             .map(|id| id.0)
-            .map_err(to_py_runtime_error)
+            .map_err(to_py_error)
     }
 
     #[pyo3(signature = (n, names=None, vtypes=None, lbs=None, ubs=None))]
@@ -66,7 +66,7 @@ impl Model {
         let ids = self
             .optimizer
             .add_variables(n, names_arg, vtypes, lbs_arg, ubs_arg)
-            .map_err(to_py_runtime_error)?;
+            .map_err(to_py_error)?;
         Ok(ids.iter().map(|id| id.0).collect())
     }
 
@@ -97,15 +97,15 @@ impl Model {
             '>' => ScalarSetType::GreaterThan(rhs),
             '=' => ScalarSetType::EqualTo(rhs),
             _ => {
-                return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
-                    "Invalid sense character",
-                ));
+                return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                    "invalid sense character: {sense}"
+                )));
             }
         };
         self.optimizer
             .add_constraint(f, s, name)
             .map(|id| id.0)
-            .map_err(to_py_runtime_error)
+            .map_err(to_py_error)
     }
 
     #[pyo3(signature = (fs_vars, fs_coeffs, fs_consts, senses, rhss, names=None))]
@@ -156,14 +156,14 @@ impl Model {
                 '>' => Ok(ScalarSetType::GreaterThan(rhs)),
                 '=' => Ok(ScalarSetType::EqualTo(rhs)),
                 _ => Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
-                    "Invalid sense character: {sense}"
+                    "invalid sense character: {sense}"
                 ))),
             })
             .collect::<PyResult<Vec<_>>>()?;
         let ids = self
             .optimizer
             .add_constraints(fs, ss, names)
-            .map_err(to_py_runtime_error)?;
+            .map_err(to_py_error)?;
         Ok(ids.iter().map(|id| id.0).collect())
     }
 
@@ -186,39 +186,36 @@ impl Model {
                 .collect(),
             constant,
         });
-        let s = if sense == 1 {
-            ModelSense::Maximize
-        } else {
-            ModelSense::Minimize
+        let s = match sense {
+            1 => ModelSense::Maximize,
+            -1 => ModelSense::Minimize,
+            _ => {
+                return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                    "objective sense must be 1 (maximize) or -1 (minimize), got {sense}"
+                )));
+            }
         };
-        self.optimizer
-            .set_objective(f, s)
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("{:?}", e)))?;
+        self.optimizer.set_objective(f, s).map_err(to_py_error)?;
         Ok(())
     }
 
     pub fn update(&mut self) -> PyResult<()> {
-        self.optimizer
-            .update()
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("{:?}", e)))
+        self.optimizer.update().map_err(to_py_error)
     }
 
     pub fn optimize(&mut self) -> PyResult<u32> {
-        let status = self.optimizer.optimize().map_err(|e| {
-            PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
-                "Optimization error: {:?}",
-                e
-            ))
-        })?;
+        let status = self.optimizer.optimize().map_err(to_py_error)?;
         Ok(status.code())
     }
 
-    pub fn get_var_value(&self, var_id: usize) -> Option<f64> {
-        self.optimizer.get_var_value(VarId(var_id))
+    pub fn get_var_value(&self, var_id: usize) -> PyResult<Option<f64>> {
+        self.optimizer
+            .get_var_value(VarId(var_id))
+            .map_err(to_py_error)
     }
 
-    pub fn get_objective_value(&self) -> Option<f64> {
-        self.optimizer.get_objective_value()
+    pub fn get_objective_value(&self) -> PyResult<Option<f64>> {
+        self.optimizer.get_objective_value().map_err(to_py_error)
     }
 
     pub fn set_optimizer_attr(
@@ -236,13 +233,9 @@ impl Model {
 
         self.optimizer
             .set_optimizer_attr(attr_enum, val)
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("{:?}", e)))?;
+            .map_err(to_py_error)?;
         Ok(())
     }
-}
-
-fn to_py_runtime_error(error: MoiError) -> PyErr {
-    PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(error.to_string())
 }
 
 fn ensure_py_len(actual: usize, expected: usize, field: &str) -> PyResult<()> {

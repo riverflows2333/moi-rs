@@ -69,6 +69,6 @@ pub trait ModelLike {
 pub trait Optimizer: ModelLike {
     fn optimize(&mut self) -> Result<SolveStatus, MoiError>;
     fn compute_conflict(&mut self) -> Result<(), MoiError>;
-    fn get_var_value(&self, var_id: VarId) -> Option<f64>;
-    fn get_objective_value(&self) -> Option<f64>;
+    fn get_var_value(&self, var_id: VarId) -> Result<Option<f64>, MoiError>;
+    fn get_objective_value(&self) -> Result<Option<f64>, MoiError>;
 }

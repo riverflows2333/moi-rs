@@ -233,23 +233,23 @@ impl Optimizer for PyBackend {
         ))
     }
 
-    fn get_var_value(&self, var_id: VarId) -> Option<f64> {
+    fn get_var_value(&self, var_id: VarId) -> Result<Option<f64>, MoiError> {
         Python::attach(|py| {
             self.backend
                 .call_method1(py, "get_var_value", (var_id.0,))
-                .ok()?
+                .map_err(|error| Self::protocol_error("get_var_value failed", error))?
                 .extract::<Option<f64>>(py)
-                .ok()?
+                .map_err(|error| Self::protocol_error("invalid get_var_value result", error))
         })
     }
 
-    fn get_objective_value(&self) -> Option<f64> {
+    fn get_objective_value(&self) -> Result<Option<f64>, MoiError> {
         Python::attach(|py| {
             self.backend
                 .call_method0(py, "get_objective_value")
-                .ok()?
+                .map_err(|error| Self::protocol_error("get_objective_value failed", error))?
                 .extract::<Option<f64>>(py)
-                .ok()?
+                .map_err(|error| Self::protocol_error("invalid get_objective_value result", error))
         })
     }
 }

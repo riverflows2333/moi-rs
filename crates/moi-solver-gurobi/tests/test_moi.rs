@@ -64,7 +64,18 @@ fn test_gurobi_solver_solve() {
     solver.update().unwrap();
     let status = solver.optimize().unwrap();
     assert_eq!(status, SolveStatus::Optimal);
-    assert_eq!(solver.get_var_value(var_id1), Some(1.0));
-    assert_eq!(solver.get_var_value(var_id2), Some(0.0));
-    assert_eq!(solver.get_var_value(var_id3), Some(1.0));
+    assert_eq!(solver.get_var_value(var_id1).unwrap(), Some(1.0));
+    assert_eq!(solver.get_var_value(var_id2).unwrap(), Some(0.0));
+    assert_eq!(solver.get_var_value(var_id3).unwrap(), Some(1.0));
+    assert_eq!(
+        solver.get_model_attr(ModelAttr::TerminationStatus),
+        Some(AttrValue::Status(SolveStatus::Optimal))
+    );
+
+    solver
+        .set_optimizer_attr(OptimizerAttr::Silent, AttrValue::Bool(true))
+        .unwrap();
+    assert_eq!(solver.get_var_value(var_id1).unwrap(), None);
+    assert_eq!(solver.get_objective_value().unwrap(), None);
+    assert_eq!(solver.get_model_attr(ModelAttr::TerminationStatus), None);
 }

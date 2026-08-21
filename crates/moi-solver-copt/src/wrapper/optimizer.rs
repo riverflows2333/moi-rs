@@ -322,9 +322,7 @@ impl ModelLike for CoptOptimizer {
             ModelAttr::ListOfVariableIndices => {
                 Some(AttrValue::VecUsize((0..self.num_vars).collect::<Vec<_>>()))
             }
-            ModelAttr::TerminationStatus => Some(AttrValue::Status(
-                self.cached_status.unwrap_or(SolveStatus::Unknown),
-            )),
+            ModelAttr::TerminationStatus => self.cached_status.map(AttrValue::Status),
             ModelAttr::ResultCount => Some(AttrValue::Usize(usize::from(
                 self.cached_solution.is_some(),
             ))),
@@ -349,7 +347,7 @@ impl ModelLike for CoptOptimizer {
         attr: OptimizerAttr,
         value: AttrValue,
     ) -> Result<(), MoiError> {
-        match attr {
+        let result = match attr {
             OptimizerAttr::SolverName => Err(MoiError::SetAttributeNotAllowed),
             OptimizerAttr::TimeLimit => {
                 let AttrValue::Float(value) = value else {
@@ -409,7 +407,10 @@ impl ModelLike for CoptOptimizer {
                     )),
                 }
             }
-        }
+        };
+        result?;
+        self.invalidate_solution();
+        Ok(())
     }
 }
 
@@ -470,15 +471,19 @@ impl Optimizer for CoptOptimizer {
         ))
     }
 
-    fn get_var_value(&self, var_id: VarId) -> Option<f64> {
-        self.cached_solution
+    fn get_var_value(&self, var_id: VarId) -> Result<Option<f64>, MoiError> {
+        if var_id.0 >= self.num_vars {
+            return Err(MoiError::InvalidVariableIndex(var_id.0));
+        }
+        Ok(self
+            .cached_solution
             .as_ref()
             .and_then(|solution| solution.get(var_id.0))
-            .copied()
+            .copied())
     }
 
-    fn get_objective_value(&self) -> Option<f64> {
-        self.cached_objective
+    fn get_objective_value(&self) -> Result<Option<f64>, MoiError> {
+        Ok(self.cached_objective)
     }
 }
 

@@ -11,7 +11,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     handle.set_solution(SolveStatus::Optimal, Some(6.0), [(x, 3.0)])?;
     println!("configured status: {:?}", model.optimize()?);
-    println!("x = {:?}", model.get_var_value(x));
-    println!("objective = {:?}", model.get_objective_value());
+    println!("x = {:?}", model.get_var_value(x)?);
+    println!("objective = {:?}", model.get_objective_value()?);
     Ok(())
 }

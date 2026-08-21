@@ -18,8 +18,11 @@ fn derived_attributes_and_default_status_are_honest() {
         Some(AttrValue::String("DummyRecordingOptimizer".into()))
     );
     assert_eq!(model.optimize().unwrap(), SolveStatus::Unknown);
-    assert_eq!(model.get_var_value(VarId(0)), None);
-    assert_eq!(model.get_objective_value(), None);
+    assert!(matches!(
+        model.get_var_value(VarId(0)),
+        Err(MoiError::InvalidVariableIndex(0))
+    ));
+    assert_eq!(model.get_objective_value().unwrap(), None);
     assert_eq!(
         model.get_model_attr(ModelAttr::TerminationStatus),
         Some(AttrValue::Status(SolveStatus::Unknown))
@@ -40,10 +43,10 @@ fn configured_solution_is_visible_only_after_optimize() {
         .set_solution(SolveStatus::Optimal, Some(6.0), [(variable, 3.0)])
         .unwrap();
 
-    assert_eq!(model.get_var_value(variable), None);
+    assert_eq!(model.get_var_value(variable).unwrap(), None);
     assert_eq!(model.optimize().unwrap(), SolveStatus::Optimal);
-    assert_eq!(model.get_var_value(variable), Some(3.0));
-    assert_eq!(model.get_objective_value(), Some(6.0));
+    assert_eq!(model.get_var_value(variable).unwrap(), Some(3.0));
+    assert_eq!(model.get_objective_value().unwrap(), Some(6.0));
     assert_eq!(
         model.get_model_attr(ModelAttr::ResultCount),
         Some(AttrValue::Usize(1))

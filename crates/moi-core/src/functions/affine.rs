@@ -1,3 +1,4 @@
+use crate::MoiError;
 use crate::functions::function::*;
 use crate::indices::VarId;
 use bincode::{Decode, Encode};
@@ -81,39 +82,45 @@ impl ScalarAffineFn {
         self.terms.retain(|term| term.coeff != 0.0);
     }
 
-    pub fn calculate(&self, rhs: &ScalarAffineFn, operation: OperationType) -> ScalarAffineFn {
+    pub fn calculate(
+        &self,
+        rhs: &ScalarAffineFn,
+        operation: OperationType,
+    ) -> Result<ScalarAffineFn, MoiError> {
         match operation {
             OperationType::Add => {
                 let mut result = ScalarAffineFn::with_capacity(self.terms.len() + rhs.terms.len());
                 result.add_assign(self);
                 result.add_assign(rhs);
                 result.simplify();
-                result
+                Ok(result)
             }
             OperationType::Sub => {
                 let mut result = ScalarAffineFn::with_capacity(self.terms.len() + rhs.terms.len());
                 result.add_assign(self);
                 result.add_scaled_assign(rhs, -1.0);
                 result.simplify();
-                result
+                Ok(result)
             }
             OperationType::Mul => {
                 // NOTE:只判断右侧或左侧为常数的情况
                 if rhs.terms.is_empty() {
                     let mut result = ScalarAffineFn::with_capacity(self.terms.len());
                     result.add_scaled_assign(self, rhs.constant);
-                    result
+                    Ok(result)
                 } else if self.terms.is_empty() {
                     let mut result = ScalarAffineFn::with_capacity(rhs.terms.len());
                     result.add_scaled_assign(rhs, self.constant);
-                    result
+                    Ok(result)
                 } else {
-                    panic!("Multiplication results in a non-affine function");
+                    Err(MoiError::InvalidInput(
+                        "multiplication results in a non-affine function".into(),
+                    ))
                 }
             }
-            _ => {
-                panic!("Unsupported operation for ScalarAffineFn");
-            }
+            OperationType::Div => Err(MoiError::InvalidInput(
+                "division is not supported for scalar affine functions".into(),
+            )),
         }
     }
 }
@@ -184,5 +191,16 @@ mod tests {
                 coeff: -2.0
             }]
         );
+    }
+
+    #[test]
+    fn calculate_rejects_non_affine_operations_without_panicking() {
+        let mut left = ScalarAffineFn::new();
+        left.push_term(VarId(0), 1.0);
+        let mut right = ScalarAffineFn::new();
+        right.push_term(VarId(1), 1.0);
+
+        assert!(left.calculate(&right, OperationType::Mul).is_err());
+        assert!(left.calculate(&right, OperationType::Div).is_err());
     }
 }

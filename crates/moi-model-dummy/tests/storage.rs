@@ -62,5 +62,16 @@ fn invalid_batch_does_not_partially_modify_state() {
             .add_variable(Some("bad-bounds"), None, Some(2.0), Some(1.0))
             .is_err()
     );
+    assert!(
+        model
+            .add_variable(Some("bad\0name"), None, None, None)
+            .is_err()
+    );
+    assert!(model.add_variable(None, Some('Q'), None, None).is_err());
+    assert!(
+        model
+            .add_variable(None, None, Some(f64::NAN), None)
+            .is_err()
+    );
     assert!(handle.snapshot().unwrap().variables.is_empty());
 }

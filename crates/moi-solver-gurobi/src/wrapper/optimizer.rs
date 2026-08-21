@@ -98,6 +98,8 @@ pub struct GurobiOptimizer {
     // 追踪变量和约束数量
     num_vars: usize,
     num_constrs: usize,
+    solution_valid: bool,
+    cached_status: Option<SolveStatus>,
 }
 
 unsafe impl Send for GurobiOptimizer {}
@@ -157,7 +159,29 @@ impl GurobiOptimizer {
             model,
             num_vars: 0,
             num_constrs: 0,
+            solution_valid: false,
+            cached_status: None,
         })
+    }
+
+    fn invalidate_solution(&mut self) {
+        self.solution_valid = false;
+        self.cached_status = None;
+    }
+
+    fn has_solution(&self) -> Result<bool, MoiError> {
+        let mut count = 0;
+        Self::check(
+            unsafe {
+                (self.api.GRBgetintattr)(
+                    self.model,
+                    GRB_INT_ATTR_SOLCOUNT.as_ptr().cast::<c_char>(),
+                    &mut count,
+                )
+            },
+            "GRBgetintattr(SolCount)",
+        )?;
+        Ok(count > 0)
     }
 }
 
@@ -171,6 +195,11 @@ impl ModelLike for GurobiOptimizer {
         ub: Option<BoundType>,
     ) -> Result<Vec<VarId>, MoiError> {
         let start_idx = self.num_vars;
+        let end_idx = start_idx
+            .checked_add(n)
+            .ok_or_else(|| MoiError::InvalidInput("variable count overflow".into()))?;
+        let native_n = c_int::try_from(n)
+            .map_err(|_| MoiError::InvalidInput("variable count exceeds c_int range".into()))?;
 
         let lbs = match lb {
             Some(BoundType::Single(v)) => vec![v; n],
@@ -191,10 +220,33 @@ impl ModelLike for GurobiOptimizer {
         let vtypes = match vtype {
             Some(v) => {
                 ensure_len(v.len(), n, "variable types")?;
-                v.into_iter().map(|c| c as c_char).collect()
+                v.into_iter()
+                    .enumerate()
+                    .map(|(index, value)| {
+                        if matches!(value, 'C' | 'B' | 'I') {
+                            Ok(value as c_char)
+                        } else {
+                            Err(MoiError::InvalidInput(format!(
+                                "variable type at index {index} must be 'C', 'B', or 'I', got '{value}'"
+                            )))
+                        }
+                    })
+                    .collect::<Result<Vec<_>, _>>()?
             }
             None => vec!['C' as c_char; n],
         };
+        for (index, (lower, upper)) in lbs.iter().zip(&ubs).enumerate() {
+            if lower.is_nan() || upper.is_nan() {
+                return Err(MoiError::InvalidInput(format!(
+                    "variable bounds at index {index} cannot contain NaN"
+                )));
+            }
+            if lower > upper {
+                return Err(MoiError::InvalidInput(format!(
+                    "lower bound {lower} exceeds upper bound {upper} for variable {index}"
+                )));
+            }
+        }
 
         let names: Vec<String> = match name {
             Some(NameType::Single(s)) => (0..n).map(|i| format!("{s}_{i}")).collect(),
@@ -213,7 +265,7 @@ impl ModelLike for GurobiOptimizer {
         let ret = unsafe {
             (self.api.GRBaddvars)(
                 self.model,
-                n as c_int,
+                native_n,
                 0,
                 std::ptr::null(),
                 std::ptr::null(),
@@ -227,8 +279,11 @@ impl ModelLike for GurobiOptimizer {
         };
         Self::check(ret, "GRBaddvars")?;
 
-        let vids = (start_idx..start_idx + n).map(VarId).collect();
-        self.num_vars += n;
+        let vids = (start_idx..end_idx).map(VarId).collect();
+        self.num_vars = end_idx;
+        if n != 0 {
+            self.invalidate_solution();
+        }
         Ok(vids)
     }
 
@@ -239,6 +294,12 @@ impl ModelLike for GurobiOptimizer {
         names: Option<Vec<String>>,
     ) -> Result<Vec<ConstrId>, MoiError> {
         let n = fs.len();
+        let native_n = c_int::try_from(n)
+            .map_err(|_| MoiError::InvalidInput("constraint count exceeds c_int range".into()))?;
+        let end_idx = self
+            .num_constrs
+            .checked_add(n)
+            .ok_or_else(|| MoiError::InvalidInput("constraint count overflow".into()))?;
         ensure_len(ss.len(), n, "constraint sets")?;
         if let Some(ref names) = names {
             ensure_len(names.len(), n, "constraint names")?;
@@ -266,8 +327,20 @@ impl ModelLike for GurobiOptimizer {
             if let Some(var) = vars.iter().find(|var| var.0 >= self.num_vars) {
                 return Err(MoiError::InvalidVariableIndex(var.0));
             }
-            cbeg.push(cind.len() as c_int);
-            cind.extend(vars.into_iter().map(|var| var.0 as c_int));
+            cbeg.push(c_int::try_from(cind.len()).map_err(|_| {
+                MoiError::InvalidInput("constraint nonzero count exceeds c_int range".into())
+            })?);
+            cind.extend(
+                vars.into_iter()
+                    .map(|var| {
+                        c_int::try_from(var.0).map_err(|_| {
+                            MoiError::InvalidInput(
+                                "constraint variable index exceeds c_int range".into(),
+                            )
+                        })
+                    })
+                    .collect::<Result<Vec<_>, _>>()?,
+            );
             cval.extend(coeffs);
             senses.push(sense as c_char);
             rhs_values.push(rhs);
@@ -280,8 +353,10 @@ impl ModelLike for GurobiOptimizer {
         let ret = unsafe {
             (self.api.GRBaddconstrs)(
                 self.model,
-                n as c_int,
-                cind.len() as c_int,
+                native_n,
+                c_int::try_from(cind.len()).map_err(|_| {
+                    MoiError::InvalidInput("constraint nonzero count exceeds c_int range".into())
+                })?,
                 cbeg.as_ptr(),
                 cind.as_ptr(),
                 cval.as_ptr(),
@@ -292,8 +367,11 @@ impl ModelLike for GurobiOptimizer {
         };
         Self::check(ret, "GRBaddconstrs")?;
 
-        self.num_constrs += n;
-        Ok((start_idx..start_idx + n).map(ConstrId).collect())
+        self.num_constrs = end_idx;
+        if n != 0 {
+            self.invalidate_solution();
+        }
+        Ok((start_idx..end_idx).map(ConstrId).collect())
     }
 
     fn set_objective(&mut self, f: ScalarFunctionType, sense: ModelSense) -> Result<(), MoiError> {
@@ -353,6 +431,7 @@ impl ModelLike for GurobiOptimizer {
                 "GRBsetintattr(ModelSense)",
             )?;
         }
+        self.invalidate_solution();
         Ok(())
     }
 
@@ -363,31 +442,13 @@ impl ModelLike for GurobiOptimizer {
                 return Err(MoiError::Msg(format!("Failed to update model: {}", ret)));
             }
         }
+        self.invalidate_solution();
         Ok(())
     }
 
     fn get_model_attr(&self, attr: ModelAttr) -> Option<AttrValue> {
         match attr {
-            ModelAttr::TerminationStatus => {
-                let mut status: i32 = 0;
-                unsafe {
-                    let ret = (self.api.GRBgetintattr)(
-                        self.model,
-                        GRB_INT_ATTR_STATUS.as_ptr() as *const c_char,
-                        &mut status as *mut c_int,
-                    );
-                    if ret != 0 {
-                        return None;
-                    }
-                    Some(AttrValue::Status(match status as u32 {
-                        GRB_OPTIMAL => SolveStatus::Optimal,
-                        GRB_INFEASIBLE => SolveStatus::Infeasible,
-                        GRB_UNBOUNDED => SolveStatus::Unbounded,
-                        GRB_SUBOPTIMAL => SolveStatus::Feasible,
-                        _ => SolveStatus::Unknown,
-                    }))
-                }
-            }
+            ModelAttr::TerminationStatus => self.cached_status.map(AttrValue::Status),
             _ => None,
         }
     }
@@ -410,6 +471,11 @@ impl ModelLike for GurobiOptimizer {
             match attr {
                 OptimizerAttr::TimeLimit => {
                     if let AttrValue::Float(v) = value {
+                        if !v.is_finite() || v < 0.0 {
+                            return Err(MoiError::InvalidInput(
+                                "TimeLimit must be finite and nonnegative".into(),
+                            ));
+                        }
                         Self::check(
                             (self.api.GRBsetdblparam)(
                                 mod_env,
@@ -425,28 +491,16 @@ impl ModelLike for GurobiOptimizer {
                     }
                 }
                 OptimizerAttr::Silent => {
-                    let flag = match value {
-                        AttrValue::Bool(v) => {
-                            if v {
-                                0
-                            } else {
-                                1
-                            }
-                        }
-                        AttrValue::Int(v) => {
-                            if v == 0 {
-                                1
-                            } else {
-                                0
-                            }
-                        }
-                        _ => 1,
+                    let AttrValue::Bool(silent) = value else {
+                        return Err(MoiError::InvalidInput(
+                            "Silent requires a boolean value".into(),
+                        ));
                     };
                     Self::check(
                         (self.api.GRBsetintparam)(
                             mod_env,
                             GRB_INT_PAR_OUTPUTFLAG.as_ptr() as *const c_char,
-                            flag,
+                            if silent { 0 } else { 1 },
                         ),
                         "GRBsetintparam(OutputFlag)",
                     )?;
@@ -457,6 +511,7 @@ impl ModelLike for GurobiOptimizer {
                 _ => return Err(MoiError::UnsupportedAttribute),
             }
         }
+        self.invalidate_solution();
         Ok(())
     }
 }
@@ -484,8 +539,22 @@ fn set_param_value(
     })?;
     let ret = unsafe {
         match value {
-            AttrValue::Float(value) => (api.GRBsetdblparam)(env, name.as_ptr(), value),
-            AttrValue::Int(value) => (api.GRBsetintparam)(env, name.as_ptr(), value as c_int),
+            AttrValue::Float(value) => {
+                if !value.is_finite() {
+                    return Err(MoiError::InvalidInput(
+                        "raw Gurobi floating-point parameter must be finite".into(),
+                    ));
+                }
+                (api.GRBsetdblparam)(env, name.as_ptr(), value)
+            }
+            AttrValue::Int(value) => {
+                let value = c_int::try_from(value).map_err(|_| {
+                    MoiError::InvalidInput(
+                        "raw Gurobi integer parameter exceeds c_int range".into(),
+                    )
+                })?;
+                (api.GRBsetintparam)(env, name.as_ptr(), value)
+            }
             AttrValue::Bool(value) => (api.GRBsetintparam)(env, name.as_ptr(), i32::from(value)),
             AttrValue::String(value) => {
                 let value = CString::new(value).map_err(|_| {
@@ -507,6 +576,7 @@ fn set_param_value(
 
 impl Optimizer for GurobiOptimizer {
     fn optimize(&mut self) -> Result<SolveStatus, MoiError> {
+        self.invalidate_solution();
         unsafe {
             let ret = (self.api.GRBoptimize)(self.model);
             if ret != 0 {
@@ -516,15 +586,27 @@ impl Optimizer for GurobiOptimizer {
                 )));
             }
         }
-        self.get_model_attr(ModelAttr::TerminationStatus)
-            .and_then(|v| {
-                if let AttrValue::Status(s) = v {
-                    Some(s)
-                } else {
-                    None
-                }
-            })
-            .ok_or(MoiError::Msg("Failed to get status".into()))
+        let mut native_status: c_int = 0;
+        check_native(
+            unsafe {
+                (self.api.GRBgetintattr)(
+                    self.model,
+                    GRB_INT_ATTR_STATUS.as_ptr() as *const c_char,
+                    &mut native_status,
+                )
+            },
+            "GRBgetintattr(Status)",
+        )?;
+        let status = match native_status as u32 {
+            GRB_OPTIMAL => SolveStatus::Optimal,
+            GRB_INFEASIBLE => SolveStatus::Infeasible,
+            GRB_UNBOUNDED => SolveStatus::Unbounded,
+            GRB_SUBOPTIMAL => SolveStatus::Feasible,
+            _ => SolveStatus::Unknown,
+        };
+        self.solution_valid = true;
+        self.cached_status = Some(status);
+        Ok(status)
     }
 
     fn compute_conflict(&mut self) -> Result<(), MoiError> {
@@ -533,7 +615,13 @@ impl Optimizer for GurobiOptimizer {
         ))
     }
 
-    fn get_var_value(&self, var_id: VarId) -> Option<f64> {
+    fn get_var_value(&self, var_id: VarId) -> Result<Option<f64>, MoiError> {
+        if var_id.0 >= self.num_vars {
+            return Err(MoiError::InvalidVariableIndex(var_id.0));
+        }
+        if !self.solution_valid || !self.has_solution()? {
+            return Ok(None);
+        }
         let mut val: f64 = 0.0;
         unsafe {
             let ret = (self.api.GRBgetdblattrelement)(
@@ -543,13 +631,20 @@ impl Optimizer for GurobiOptimizer {
                 &mut val as *mut c_double,
             );
             if ret != 0 {
-                return None;
+                return Err(MoiError::NativeSolver {
+                    solver: "Gurobi",
+                    context: "GRBgetdblattrelement(X)",
+                    code: ret,
+                });
             }
         }
-        Some(val)
+        Ok(Some(val))
     }
 
-    fn get_objective_value(&self) -> Option<f64> {
+    fn get_objective_value(&self) -> Result<Option<f64>, MoiError> {
+        if !self.solution_valid || !self.has_solution()? {
+            return Ok(None);
+        }
         let mut val: f64 = 0.0;
         unsafe {
             let ret = (self.api.GRBgetdblattr)(
@@ -558,10 +653,14 @@ impl Optimizer for GurobiOptimizer {
                 &mut val as *mut c_double,
             );
             if ret != 0 {
-                return None;
+                return Err(MoiError::NativeSolver {
+                    solver: "Gurobi",
+                    context: "GRBgetdblattr(ObjVal)",
+                    code: ret,
+                });
             }
         }
-        Some(val)
+        Ok(Some(val))
     }
 }
 

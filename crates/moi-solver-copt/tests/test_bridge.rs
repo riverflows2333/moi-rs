@@ -80,9 +80,9 @@ fn bridge_supports_initial_sync_and_incremental_modeling() {
     bridge.update().unwrap();
 
     assert_eq!(bridge.optimize().unwrap(), SolveStatus::Optimal);
-    assert!((bridge.get_var_value(VarId(0)).unwrap() - 0.0).abs() < 1e-7);
-    assert!((bridge.get_var_value(VarId(1)).unwrap() - 1.0).abs() < 1e-7);
-    assert!((bridge.get_objective_value().unwrap() - 2.0).abs() < 1e-7);
+    assert!((bridge.get_var_value(VarId(0)).unwrap().unwrap() - 0.0).abs() < 1e-7);
+    assert!((bridge.get_var_value(VarId(1)).unwrap().unwrap() - 1.0).abs() < 1e-7);
+    assert!((bridge.get_objective_value().unwrap().unwrap() - 2.0).abs() < 1e-7);
 
     assert_eq!(
         bridge.get_model_attr(ModelAttr::NumberOfVariables),

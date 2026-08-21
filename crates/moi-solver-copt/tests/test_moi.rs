@@ -181,9 +181,9 @@ fn solves_lp_and_invalidates_cached_solution_after_mutation() {
         .unwrap();
 
     assert_eq!(optimizer.optimize().unwrap(), SolveStatus::Optimal);
-    assert!((optimizer.get_var_value(VarId(0)).unwrap() - 0.0).abs() < 1e-7);
-    assert!((optimizer.get_var_value(VarId(1)).unwrap() - 2.0).abs() < 1e-7);
-    assert!((optimizer.get_objective_value().unwrap() - 5.0).abs() < 1e-7);
+    assert!((optimizer.get_var_value(VarId(0)).unwrap().unwrap() - 0.0).abs() < 1e-7);
+    assert!((optimizer.get_var_value(VarId(1)).unwrap().unwrap() - 2.0).abs() < 1e-7);
+    assert!((optimizer.get_objective_value().unwrap().unwrap() - 5.0).abs() < 1e-7);
     assert_eq!(
         optimizer.get_model_attr(ModelAttr::ResultCount),
         Some(AttrValue::Usize(1))
@@ -192,12 +192,17 @@ fn solves_lp_and_invalidates_cached_solution_after_mutation() {
     optimizer
         .add_variable(Some("new"), None, None, None)
         .unwrap();
-    assert_eq!(optimizer.get_var_value(VarId(0)), None);
-    assert_eq!(optimizer.get_objective_value(), None);
-    assert_eq!(
-        optimizer.get_model_attr(ModelAttr::TerminationStatus),
-        Some(AttrValue::Status(SolveStatus::Unknown))
-    );
+    assert_eq!(optimizer.get_var_value(VarId(0)).unwrap(), None);
+    assert_eq!(optimizer.get_objective_value().unwrap(), None);
+    assert_eq!(optimizer.get_model_attr(ModelAttr::TerminationStatus), None);
+
+    assert_eq!(optimizer.optimize().unwrap(), SolveStatus::Optimal);
+    optimizer
+        .set_optimizer_attr(OptimizerAttr::Silent, AttrValue::Bool(true))
+        .unwrap();
+    assert_eq!(optimizer.get_var_value(VarId(0)).unwrap(), None);
+    assert_eq!(optimizer.get_objective_value().unwrap(), None);
+    assert_eq!(optimizer.get_model_attr(ModelAttr::TerminationStatus), None);
 }
 
 #[test]
@@ -238,9 +243,9 @@ fn solves_binary_milp_with_parameters_and_objective_constant() {
         .unwrap();
 
     assert_eq!(optimizer.optimize().unwrap(), SolveStatus::Optimal);
-    assert!((optimizer.get_var_value(VarId(0)).unwrap() - 1.0).abs() < 1e-7);
-    assert!((optimizer.get_var_value(VarId(1)).unwrap() - 0.0).abs() < 1e-7);
-    assert!((optimizer.get_objective_value().unwrap() - 7.0).abs() < 1e-7);
+    assert!((optimizer.get_var_value(VarId(0)).unwrap().unwrap() - 1.0).abs() < 1e-7);
+    assert!((optimizer.get_var_value(VarId(1)).unwrap().unwrap() - 0.0).abs() < 1e-7);
+    assert!((optimizer.get_objective_value().unwrap().unwrap() - 7.0).abs() < 1e-7);
 }
 
 #[test]
@@ -259,8 +264,8 @@ fn infeasible_and_unbounded_models_have_no_cached_result() {
         )
         .unwrap();
     assert_eq!(infeasible.optimize().unwrap(), SolveStatus::Infeasible);
-    assert_eq!(infeasible.get_var_value(VarId(0)), None);
-    assert_eq!(infeasible.get_objective_value(), None);
+    assert_eq!(infeasible.get_var_value(VarId(0)).unwrap(), None);
+    assert_eq!(infeasible.get_objective_value().unwrap(), None);
 
     let Some(mut unbounded) = configured_optimizer() else {
         return;
@@ -272,8 +277,8 @@ fn infeasible_and_unbounded_models_have_no_cached_result() {
         .set_objective(ScalarFunctionType::Variable(VarId(0)), ModelSense::Maximize)
         .unwrap();
     assert_eq!(unbounded.optimize().unwrap(), SolveStatus::Unbounded);
-    assert_eq!(unbounded.get_var_value(VarId(0)), None);
-    assert_eq!(unbounded.get_objective_value(), None);
+    assert_eq!(unbounded.get_var_value(VarId(0)).unwrap(), None);
+    assert_eq!(unbounded.get_objective_value().unwrap(), None);
 }
 
 #[test]
