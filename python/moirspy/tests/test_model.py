@@ -8,6 +8,14 @@ if sys.platform == "win32":
 else:
     os.environ.setdefault("GUROBI_HOME", "/opt/gurobi1203")
 class TestModel(TestCase):
+    def attach_gurobi(self, model):
+        try:
+            model.setBackend("gurobi")
+        except RuntimeError as error:
+            if "10009" in str(error):
+                self.skipTest("Gurobi runtime is available but no license is active")
+            raise
+
     # def test_model_import(self):
     #     model = Model("test_model")
     #     print(model)
@@ -44,7 +52,7 @@ class TestModel(TestCase):
         model.addConstr(x[0] + x[1] >= 1.0, name="c2")
         model.setObjective(x[0] + x[1] + 2 * x[2], sense=MOI.MAXIMIZE)
         model.setParam("OutputFlag", 0)
-        model.setBackend("gurobi")
+        self.attach_gurobi(model)
         model.optimize()
         print(x[2].X)
         print(model.ObjVal)
@@ -54,7 +62,7 @@ class TestModel(TestCase):
         x = model.addVars(3, name="x", vtype=MOI.BINARY)
         model.addConstr(quicksum(x[i] for i in range(3)) <= 2.0, name="c1")
         model.setObjective(quicksum(x[i] for i in range(3)), sense=MOI.MAXIMIZE)
-        model.setBackend("gurobi")
+        self.attach_gurobi(model)
         model.optimize()
 
 

@@ -80,6 +80,10 @@ class WindowsCoptModelTests(unittest.TestCase):
         self.assertAlmostEqual(x.X, 6.0, places=7)
         self.assertAlmostEqual(model.ObjVal, 7.0, places=7)
 
+        model.addConstr(x <= 8.0)
+        self.assertIsNone(x.X)
+        self.assertIsNone(model.ObjVal)
+
     def test_infeasible_and_unbounded_models_have_no_values(self):
         infeasible = self.new_model("copt-infeasible")
         x = infeasible.addVar(lb=0.0, ub=1.0, name="x")

@@ -32,6 +32,14 @@ class WindowsGurobiModelTests(unittest.TestCase):
         model.setParam("OutputFlag", False)
         return model
 
+    def attach_backend(self, model, env=None):
+        try:
+            model.setBackend("gurobi", env=env)
+        except RuntimeError as error:
+            if "10009" in str(error):
+                self.skipTest("Gurobi runtime is available but no license is active")
+            raise
+
     def test_binary_model_and_solution_values(self):
         model = self.new_model("windows-binary")
         x = model.addVars(3, name="x", vtype=MOI.BINARY)
@@ -39,7 +47,7 @@ class WindowsGurobiModelTests(unittest.TestCase):
         model.addConstr(x[0] + x[1] >= 1, name="selection")
         model.setObjective(x[0] + x[1] + 2 * x[2], MOI.MAXIMIZE)
 
-        model.setBackend("gurobi")
+        self.attach_backend(model)
         model.optimize()
 
         self.assertAlmostEqual(model.ObjVal, 3.0, places=7)
@@ -57,7 +65,7 @@ class WindowsGurobiModelTests(unittest.TestCase):
         model.addConstr(x[0] + x[1] >= 7.0, name="demand")
         model.setObjective(x[0] + x[1], MOI.MINIMIZE)
 
-        model.setBackend("gurobi")
+        self.attach_backend(model)
         model.optimize()
 
         values = [x[i].X for i in range(2)]
@@ -74,7 +82,7 @@ class WindowsGurobiModelTests(unittest.TestCase):
         model.addConstr(x >= 4.0, name="minimum")
         model.setObjective(2.0 * x, MOI.MINIMIZE)
 
-        model.setBackend("gurobi")
+        self.attach_backend(model)
         model.optimize()
 
         self.assertAlmostEqual(x.X, 4.0, places=7)
@@ -82,7 +90,7 @@ class WindowsGurobiModelTests(unittest.TestCase):
 
     def test_incremental_modeling_after_backend_attach(self):
         model = self.new_model("windows-incremental")
-        model.setBackend("gurobi")
+        self.attach_backend(model)
 
         x = model.addVar(lb=0.0, ub=10.0, name="x")
         model.addConstr(x >= 6.0, name="minimum")
@@ -92,13 +100,17 @@ class WindowsGurobiModelTests(unittest.TestCase):
         self.assertAlmostEqual(x.X, 6.0, places=7)
         self.assertAlmostEqual(model.ObjVal, 7.0, places=7)
 
+        model.addConstr(x <= 8.0)
+        self.assertIsNone(x.X)
+        self.assertIsNone(model.ObjVal)
+
     def test_infeasible_model_has_no_solution_values(self):
         model = self.new_model("windows-infeasible")
         x = model.addVar(lb=0.0, ub=1.0, name="x")
         model.addConstr(x >= 2.0, name="impossible")
         model.setObjective(1.0 * x, MOI.MINIMIZE)
 
-        model.setBackend("gurobi")
+        self.attach_backend(model)
         model.optimize()
 
         self.assertIsNone(model.ObjVal)
@@ -109,7 +121,7 @@ class WindowsGurobiModelTests(unittest.TestCase):
         x = model.addVar(lb=0.0, name="x")
         model.setObjective(1.0 * x, MOI.MAXIMIZE)
 
-        model.setBackend("gurobi")
+        self.attach_backend(model)
         model.optimize()
 
         self.assertIsNone(model.ObjVal)
@@ -117,18 +129,23 @@ class WindowsGurobiModelTests(unittest.TestCase):
 
     def test_invalid_vector_lengths_fail_before_backend_attach(self):
         model = self.new_model("windows-invalid-input")
-        with self.assertRaises(RuntimeError):
+        with self.assertRaises(ValueError):
             model.addVars(2, lb=[0.0], name="x")
 
     def test_explicit_gurobi_environment_through_high_level_model(self):
-        env = GurobiEnv(str(GUROBI_DLL))
+        try:
+            env = GurobiEnv(str(GUROBI_DLL))
+        except RuntimeError as error:
+            if "10009" in str(error):
+                self.skipTest("Gurobi runtime is available but no license is active")
+            raise
         env.setParam("OutputFlag", 0)
         env.setParam("Threads", 1)
 
         model = Model("windows-explicit-env")
         x = model.addVar(lb=3.0, ub=5.0, name="x")
         model.setObjective(1.0 * x, MOI.MINIMIZE)
-        model.setBackend("gurobi", env=env)
+        self.attach_backend(model, env=env)
         model.optimize()
 
         self.assertAlmostEqual(x.X, 3.0, places=7)
