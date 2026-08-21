@@ -8,3 +8,4 @@ __pycache__/
 input/
 crates/moi-solver-copt/src/bindings/gen.rs
 benchmark/results/
+*_oem.py
