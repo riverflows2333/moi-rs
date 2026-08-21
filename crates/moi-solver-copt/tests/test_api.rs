@@ -1,4 +1,4 @@
-use moi_solver_copt::{CoptApi, CoptEnv, CoptOptimizer, bindings, find_library};
+use moi_solver_copt::{CoptApi, CoptEnv, CoptEnvConfig, CoptOptimizer, bindings, find_library};
 use std::ffi::{CStr, c_char};
 use std::sync::{Arc, Mutex};
 
@@ -78,6 +78,44 @@ fn explicit_license_directory_creates_environment() {
     let env = CoptEnv::with_license_dir(api, license_dir)
         .expect("explicit COPT license directory should create an environment");
     drop(env);
+}
+
+#[test]
+fn configured_environment_and_problem_lifecycle() {
+    let Some(api) = configured_api() else {
+        return;
+    };
+    let mut config = CoptEnvConfig::new(api).expect("COPT client configuration should be created");
+    config
+        .set("NoBanner", "1")
+        .expect("NoBanner should be accepted by COPT");
+
+    let env = Arc::new(Mutex::new(
+        CoptEnv::with_config(&config).expect("configured COPT environment should be created"),
+    ));
+    let optimizer = CoptOptimizer::new(env).expect("configured problem should be created");
+    assert_eq!(optimizer.num_variables(), 0);
+    assert_eq!(optimizer.num_constraints(), 0);
+}
+
+#[test]
+fn environment_config_rejects_embedded_nul_without_exposing_values() {
+    let Some(api) = configured_api() else {
+        return;
+    };
+    let mut config = CoptEnvConfig::new(api).expect("COPT client configuration should be created");
+
+    let name_error = config
+        .set("bad\0name", "value")
+        .expect_err("embedded NUL in a name should be rejected");
+    assert!(name_error.to_string().contains("name"));
+
+    let value_error = config
+        .set("License", "sensitive\0value")
+        .expect_err("embedded NUL in a value should be rejected");
+    let message = value_error.to_string();
+    assert!(message.contains("value"));
+    assert!(!message.contains("sensitive"));
 }
 
 #[test]

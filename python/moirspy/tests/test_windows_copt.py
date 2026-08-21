@@ -13,10 +13,12 @@ if sys.platform == "win32" and COPT_DLL.exists():
 try:
     from moirspy import MOI, Model
     from moirspy_copt import Env as CoptEnv
+    from moirspy_copt import EnvrConfig as CoptEnvrConfig
 except ImportError:
     MOI = None
     Model = None
     CoptEnv = None
+    CoptEnvrConfig = None
 
 
 @unittest.skipUnless(
@@ -105,6 +107,20 @@ class WindowsCoptModelTests(unittest.TestCase):
         model.optimize()
 
         self.assertAlmostEqual(x.X, 3.0, places=7)
+
+    def test_configured_environment_through_high_level_model(self):
+        config = CoptEnvrConfig(str(COPT_DLL))
+        config.set("NoBanner", 1)
+        env = CoptEnv(config=config)
+
+        model = self.new_model("copt-configured-env")
+        x = model.addVar(lb=4.0, ub=4.0, name="x")
+        model.setObjective(1.0 * x, MOI.MINIMIZE)
+        model.setBackend("copt", env=env)
+        model.optimize()
+
+        self.assertAlmostEqual(model.ObjVal, 4.0, places=7)
+        self.assertAlmostEqual(x.X, 4.0, places=7)
 
 
 if __name__ == "__main__":

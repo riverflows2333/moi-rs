@@ -11,9 +11,11 @@ if sys.platform == "win32" and COPT_DLL.exists():
     os.environ["COPT_HOME"] = str(COPT_HOME)
 
 try:
-    from moirspy_copt import Env, Model
+    from moirspy_copt import COPT, Env, EnvrConfig, Model
 except ImportError:
+    COPT = None
     Env = None
+    EnvrConfig = None
     Model = None
 
 
@@ -21,6 +23,7 @@ except ImportError:
     sys.platform == "win32"
     and COPT_DLL.exists()
     and Env is not None
+    and EnvrConfig is not None
     and Model is not None,
     "requires the Windows COPT 8 runtime and built moirspy_copt extension",
 )
@@ -101,6 +104,53 @@ class LowLevelWindowsCoptTests(unittest.TestCase):
         x = model.add_variable(name="x", lb=1.0, ub=1.0)
         model.set_objective([x], [1.0], 0.0, -1)
         self.assertEqual(model.optimize(), 1)
+
+    def test_environment_config_and_client_constants(self):
+        expected = {
+            "CLIENT_CAFILE": "CaFile",
+            "CLIENT_CERTFILE": "CertFile",
+            "CLIENT_CERTKEYFILE": "CertKeyFile",
+            "CLIENT_CLUSTER": "Cluster",
+            "CLIENT_FLOATING": "Floating",
+            "CLIENT_PASSWORD": "PassWord",
+            "CLIENT_PORT": "Port",
+            "CLIENT_PRIORITY": "Priority",
+            "CLIENT_WAITTIME": "WaitTime",
+            "CLIENT_WEBSERVER": "WebServer",
+            "CLIENT_WEBLICENSEID": "WebLicenseId",
+            "CLIENT_WEBACCESSKEY": "WebAccessKey",
+            "CLIENT_WEBTOKENDURATION": "WebTokenDuration",
+        }
+        for name, value in expected.items():
+            self.assertEqual(getattr(COPT, name), value)
+
+        config = EnvrConfig(str(COPT_DLL))
+        config.set("NoBanner", True)
+        env = Env(config=config)
+        model = Model("configured-env", env=env)
+        model.set_optimizer_attr("Logging", 0)
+        x = model.add_variable(name="x", lb=2.0, ub=2.0)
+        model.set_objective([x], [1.0], 0.0, -1)
+
+        self.assertEqual(model.optimize(), 1)
+        self.assertAlmostEqual(model.get_objective_value(), 2.0, places=7)
+
+    def test_environment_config_validation_and_direct_model(self):
+        config = EnvrConfig(str(COPT_DLL))
+        config.set("NoBanner", 1)
+        with self.assertRaises(TypeError):
+            config.set("NoBanner", object())
+        with self.assertRaises(RuntimeError):
+            config.set("License", "invalid\0value")
+        with self.assertRaises(ValueError):
+            Env(str(COPT_DLL), config=config)
+
+        model = Model("direct-config", config=config)
+        model.set_optimizer_attr("Logging", 0)
+        x = model.add_variable(name="x", lb=3.0, ub=3.0)
+        model.set_objective([x], [1.0], 0.0, -1)
+        self.assertEqual(model.optimize(), 1)
+        self.assertAlmostEqual(model.get_objective_value(), 3.0, places=7)
 
 
 if __name__ == "__main__":
