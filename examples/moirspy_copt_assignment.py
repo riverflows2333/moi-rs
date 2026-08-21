@@ -15,7 +15,7 @@ from __future__ import annotations
 from math import isclose
 
 from moirspy import MOI, Model, quicksum
-from moirspy_copt import Env
+from moirspy_copt import Env, EnvrConfig
 
 
 WORKERS = ("Alice", "Bob", "Carol", "Dave")
@@ -37,9 +37,11 @@ def main() -> None:
     num_workers = len(WORKERS)
     num_jobs = len(JOBS)
 
-    # Env() uses COPT's default installation and license discovery.  The same
-    # environment may be passed to more than one model when needed.
-    copt_env = Env()
+    # EnvrConfig mirrors COPT's client configuration API. It can also hold
+    # cluster, certificate, web-license, or externally supplied OEM settings.
+    config = EnvrConfig()
+    config.set("NoBanner", 1)
+    copt_env = Env(config=config)
     model = Model("assignment-demo")
 
     # Attaching COPT before modeling forwards subsequent changes incrementally
