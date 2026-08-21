@@ -7,7 +7,11 @@ pub mod model;
 #[pymodule]
 mod moirspy_copt {
     #[pymodule_export]
+    use crate::env::CoptConstants;
+    #[pymodule_export]
     use crate::env::Env;
+    #[pymodule_export]
+    use crate::env::EnvConfig;
     #[pymodule_export]
     use crate::model::Model;
 }

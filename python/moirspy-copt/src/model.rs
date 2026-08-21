@@ -1,4 +1,4 @@
-use crate::env::{Env, attr_value_from_py, load_api, to_py_runtime_error};
+use crate::env::{Env, EnvConfig, attr_value_from_py, load_api, to_py_runtime_error};
 use moi_core::*;
 use moi_solver_api::*;
 use moi_solver_copt::{CoptEnv, CoptOptimizer};
@@ -14,21 +14,31 @@ pub struct Model {
 #[pymethods]
 impl Model {
     #[new]
-    #[pyo3(signature = (name=None, dll_path=None, env=None, license_dir=None))]
+    #[pyo3(signature = (name=None, dll_path=None, env=None, license_dir=None, config=None))]
     pub fn new(
         name: Option<&str>,
         dll_path: Option<String>,
         env: Option<PyRef<'_, Env>>,
         license_dir: Option<String>,
+        config: Option<PyRef<'_, EnvConfig>>,
     ) -> PyResult<Self> {
         let _ = name;
         let env = if let Some(env) = env {
-            if dll_path.is_some() || license_dir.is_some() {
+            if dll_path.is_some() || license_dir.is_some() || config.is_some() {
                 return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
-                    "env cannot be provided together with dll_path or license_dir",
+                    "env cannot be provided together with dll_path, license_dir, or config",
                 ));
             }
             env.inner.clone()
+        } else if let Some(config) = config {
+            if dll_path.is_some() || license_dir.is_some() {
+                return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                    "config cannot be provided together with dll_path or license_dir",
+                ));
+            }
+            Arc::new(Mutex::new(
+                CoptEnv::with_config(&config.inner).map_err(to_py_runtime_error)?,
+            ))
         } else {
             let api = load_api(dll_path)?;
             let env = match license_dir {

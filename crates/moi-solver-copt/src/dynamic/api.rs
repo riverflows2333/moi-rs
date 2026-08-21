@@ -8,8 +8,13 @@ use std::path::{Path, PathBuf};
 
 pub type CoptGetBanner = unsafe extern "C" fn(*mut c_char, c_int) -> c_int;
 pub type CoptGetRetcodeMsg = unsafe extern "C" fn(c_int, *mut c_char, c_int) -> c_int;
+pub type CoptCreateEnvConfig = unsafe extern "C" fn(*mut *mut c_void) -> c_int;
+pub type CoptDeleteEnvConfig = unsafe extern "C" fn(*mut *mut c_void) -> c_int;
+pub type CoptSetEnvConfig =
+    unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> c_int;
 pub type CoptCreateEnv = unsafe extern "C" fn(*mut *mut c_void) -> c_int;
 pub type CoptCreateEnvWithPath = unsafe extern "C" fn(*const c_char, *mut *mut c_void) -> c_int;
+pub type CoptCreateEnvWithConfig = unsafe extern "C" fn(*mut c_void, *mut *mut c_void) -> c_int;
 pub type CoptDeleteEnv = unsafe extern "C" fn(*mut *mut c_void) -> c_int;
 pub type CoptGetLicenseMsg = unsafe extern "C" fn(*mut c_void, *mut c_char, c_int) -> c_int;
 pub type CoptCreateProb = unsafe extern "C" fn(*mut c_void, *mut *mut c_void) -> c_int;
@@ -107,8 +112,12 @@ pub struct CoptApi {
 
     pub COPT_GetBanner: CoptGetBanner,
     pub COPT_GetRetcodeMsg: CoptGetRetcodeMsg,
+    pub COPT_CreateEnvConfig: CoptCreateEnvConfig,
+    pub COPT_DeleteEnvConfig: CoptDeleteEnvConfig,
+    pub COPT_SetEnvConfig: CoptSetEnvConfig,
     pub COPT_CreateEnv: CoptCreateEnv,
     pub COPT_CreateEnvWithPath: CoptCreateEnvWithPath,
+    pub COPT_CreateEnvWithConfig: CoptCreateEnvWithConfig,
     pub COPT_DeleteEnv: CoptDeleteEnv,
     pub COPT_GetLicenseMsg: CoptGetLicenseMsg,
     pub COPT_CreateProb: CoptCreateProb,
@@ -159,8 +168,12 @@ impl CoptApi {
         Ok(Self {
             COPT_GetBanner: load!("COPT_GetBanner", CoptGetBanner),
             COPT_GetRetcodeMsg: load!("COPT_GetRetcodeMsg", CoptGetRetcodeMsg),
+            COPT_CreateEnvConfig: load!("COPT_CreateEnvConfig", CoptCreateEnvConfig),
+            COPT_DeleteEnvConfig: load!("COPT_DeleteEnvConfig", CoptDeleteEnvConfig),
+            COPT_SetEnvConfig: load!("COPT_SetEnvConfig", CoptSetEnvConfig),
             COPT_CreateEnv: load!("COPT_CreateEnv", CoptCreateEnv),
             COPT_CreateEnvWithPath: load!("COPT_CreateEnvWithPath", CoptCreateEnvWithPath),
+            COPT_CreateEnvWithConfig: load!("COPT_CreateEnvWithConfig", CoptCreateEnvWithConfig),
             COPT_DeleteEnv: load!("COPT_DeleteEnv", CoptDeleteEnv),
             COPT_GetLicenseMsg: load!("COPT_GetLicenseMsg", CoptGetLicenseMsg),
             COPT_CreateProb: load!("COPT_CreateProb", CoptCreateProb),
