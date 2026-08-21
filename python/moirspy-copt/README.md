@@ -57,6 +57,48 @@ COPT solve parameters belong to a problem, so configure them on each model with
 `set_optimizer_attr`, or through high-level `Model.setParam`. They are not set
 on `Env`.
 
+## Environment configuration
+
+`EnvrConfig` mirrors COPT's client-configuration workflow. Configuration values
+may be strings, Booleans, integers, or floats; they are converted to the string
+values required by `COPT_SetEnvConfig` before an environment is created.
+
+```python
+from moirspy_copt import COPT, Env, EnvrConfig
+
+config = EnvrConfig()
+config.set("NoBanner", 1)
+config.set(COPT.CLIENT_CAFILE, "/path/to/ca.pem")
+config.set(COPT.CLIENT_CERTFILE, "/path/to/client.pem")
+config.set(COPT.CLIENT_CERTKEYFILE, "/path/to/client-key.pem")
+
+env = Env(config=config)
+```
+
+The `COPT` namespace exposes all client configuration names published in the
+COPT 8.0.6 header: CA/certificate files, cluster and floating servers, password,
+port, priority, wait time, and web-license settings. Arbitrary configuration
+names are also forwarded unchanged, which supports vendor-provided OEM fields.
+Keep OEM material outside source control, for example:
+
+```python
+import os
+
+config = EnvrConfig()
+config.set("OEM", os.environ["COPT_OEM_NAME"])
+config.set("License", os.environ["COPT_OEM_LICENSE"])
+config.set("Signature", os.environ["COPT_OEM_SIGNATURE"])
+env = Env(config=config)
+```
+
+`config` is mutually exclusive with `dll_path` and `license_dir`. If a custom
+native library is needed, pass it when constructing the configuration:
+
+```python
+config = EnvrConfig(dll_path="/opt/copt80/lib/libcopt.so")
+env = Env(config=config)
+```
+
 ## Low-level API
 
 ```python
