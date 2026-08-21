@@ -74,8 +74,25 @@ class LowLevelWindowsCoptTests(unittest.TestCase):
             model.add_constraint([0, 1], [1.0], 0.0, "<", 1.0)
         with self.assertRaises(ValueError):
             model.add_constraint([0], [1.0], 0.0, "!", 1.0)
+        with self.assertRaises(ValueError):
+            model.add_variable(name="bad\0name")
+        with self.assertRaises(ValueError):
+            model.add_variable(vtype="Q")
+        with self.assertRaises(ValueError):
+            model.add_variable(lb=float("nan"))
+        with self.assertRaises(ValueError):
+            model.set_objective([], [], 0.0, 0)
+        with self.assertRaises(ValueError):
+            model.get_var_value(0)
         with self.assertRaises(TypeError):
             model.set_optimizer_attr("Threads", "one")
+
+    def test_repeated_environment_and_problem_lifecycle(self):
+        for index in range(10):
+            env = Env(str(COPT_DLL))
+            model = Model(f"lifecycle-{index}", env=env)
+            model.set_optimizer_attr("Logging", 0)
+            model.add_variable(name="x", lb=0.0, ub=1.0)
 
     def test_explicit_environment_can_be_reused(self):
         env = Env(str(COPT_DLL))
@@ -140,7 +157,7 @@ class LowLevelWindowsCoptTests(unittest.TestCase):
         config.set("NoBanner", 1)
         with self.assertRaises(TypeError):
             config.set("NoBanner", object())
-        with self.assertRaises(RuntimeError):
+        with self.assertRaises(ValueError):
             config.set("License", "invalid\0value")
         with self.assertRaises(ValueError):
             Env(str(COPT_DLL), config=config)
