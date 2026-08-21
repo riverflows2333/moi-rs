@@ -18,3 +18,6 @@ moi-bridge.workspace = true
 [features]
 default = ["copt80"]
 copt80 = []
+
+[dev-dependencies]
+moi-model-dummy = { path = "../moi-model-dummy" }
