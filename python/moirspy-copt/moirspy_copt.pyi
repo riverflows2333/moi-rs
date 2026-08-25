@@ -1,5 +1,8 @@
 from typing import ClassVar, List, Optional, Union
 
+import numpy as np
+import numpy.typing as npt
+
 ParamValue = Union[bool, int, float]
 EnvConfigValue = Union[str, bool, int, float]
 
@@ -72,10 +75,27 @@ class Model:
         rhss: List[float],
         names: Optional[List[str]] = ...,
     ) -> List[int]: ...
+    def add_constraints_flat(
+        self,
+        row_offsets: npt.NDArray[np.uintp],
+        columns: npt.NDArray[np.uintp],
+        values: npt.NDArray[np.float64],
+        constants: npt.NDArray[np.float64],
+        senses: npt.NDArray[np.uint8],
+        rhss: npt.NDArray[np.float64],
+        names: Optional[List[str]] = ...,
+    ) -> tuple[int, int]: ...
     def set_objective(
         self,
         vars: List[int],
         coeffs: List[float],
+        constant: float,
+        sense: int,
+    ) -> None: ...
+    def set_objective_flat(
+        self,
+        vars: npt.NDArray[np.uintp],
+        coeffs: npt.NDArray[np.float64],
         constant: float,
         sense: int,
     ) -> None: ...

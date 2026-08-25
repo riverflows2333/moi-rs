@@ -3,7 +3,7 @@ import sys
 import types
 from unittest import TestCase
 
-from moirspy import Model, Var, dot, quicksum
+from moirspy import MOI, Model, Var, dot, quicksum
 
 
 class TestPythonInputValidation(TestCase):
@@ -107,6 +107,56 @@ class TestPythonInputValidation(TestCase):
                 _ = x.X
             with self.assertRaisesRegex(RuntimeError, "get_objective_value failed"):
                 _ = model.ObjVal
+        finally:
+            sys.modules.pop(module_name, None)
+
+    def test_legacy_python_backend_protocol_remains_supported(self):
+        class LegacyBackend:
+            instance = None
+
+            def __init__(self, *_args):
+                type(self).instance = self
+                self.num_variables = 0
+                self.num_constraints = 0
+                self.rows = None
+                self.objective = None
+
+            def add_variables(self, n, *_args):
+                start = self.num_variables
+                self.num_variables += n
+                return list(range(start, self.num_variables))
+
+            def add_constraints(
+                self, variables, coefficients, constants, senses, rhs, names
+            ):
+                self.rows = (variables, coefficients, constants, senses, rhs, names)
+                start = self.num_constraints
+                self.num_constraints += len(variables)
+                return list(range(start, self.num_constraints))
+
+            def set_objective(self, variables, coefficients, constant, sense):
+                self.objective = (variables, coefficients, constant, sense)
+
+            def set_optimizer_attr(self, *_args):
+                pass
+
+            def update(self):
+                pass
+
+        module_name = "moirspy_legacy"
+        sys.modules[module_name] = types.SimpleNamespace(Model=LegacyBackend)
+        try:
+            model = Model("legacy-protocol")
+            x = model.addVars(2)
+            model.addConstrs((x[i] >= i + 1 for i in range(2)))
+            model.setObjective(x[0] + 2 * x[1], MOI.MINIMIZE)
+            model.setBackend("legacy")
+
+            backend = LegacyBackend.instance
+            self.assertEqual(backend.rows[0], [[0], [1]])
+            self.assertEqual(backend.rows[1], [[1.0], [1.0]])
+            self.assertEqual(backend.rows[3], [">", ">"])
+            self.assertEqual(backend.objective[:2], ([0, 1], [1.0, 2.0]))
         finally:
             sys.modules.pop(module_name, None)
 

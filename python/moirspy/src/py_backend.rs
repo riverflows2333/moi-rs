@@ -4,6 +4,7 @@ use moi_core::functions::ScalarFunctionType;
 use moi_core::indices::{ConstrId, VarId};
 use moi_core::sets::ScalarSetType;
 use moi_solver_api::*;
+use numpy::PyArray1;
 use pyo3::prelude::*;
 use pyo3::types::{PyAny, PyBool, PyFloat, PyInt, PyString};
 
@@ -99,6 +100,82 @@ impl ModelLike for PyBackend {
             ensure_len(values.len(), fs.len(), "constraint names")?;
         }
 
+        let n = fs.len();
+        let nnz = fs
+            .iter()
+            .map(|function| match function {
+                ScalarFunctionType::Affine(affine) => affine.terms.len(),
+                ScalarFunctionType::Variable(_) => 1,
+            })
+            .sum();
+        let mut row_offsets = Vec::with_capacity(n + 1);
+        let mut flat_variables = Vec::with_capacity(nnz);
+        let mut flat_coefficients = Vec::with_capacity(nnz);
+        let mut constants = Vec::with_capacity(n);
+        row_offsets.push(0);
+        for function in &fs {
+            match function {
+                ScalarFunctionType::Affine(affine) => {
+                    flat_variables.extend(affine.terms.iter().map(|term| term.var.0));
+                    flat_coefficients.extend(affine.terms.iter().map(|term| term.coeff));
+                    constants.push(affine.constant);
+                }
+                ScalarFunctionType::Variable(variable) => {
+                    flat_variables.push(variable.0);
+                    flat_coefficients.push(1.0);
+                    constants.push(0.0);
+                }
+            }
+            row_offsets.push(flat_variables.len());
+        }
+
+        let mut flat_senses = Vec::with_capacity(n);
+        let mut rhs = Vec::with_capacity(n);
+        for set in &ss {
+            let (sense, value) = Self::constraint_parts(set.clone())?;
+            flat_senses.push(sense.as_bytes()[0]);
+            rhs.push(value);
+        }
+
+        let flat_result = Python::attach(|py| -> Result<Option<Vec<ConstrId>>, MoiError> {
+            if !self
+                .backend
+                .bind(py)
+                .hasattr("add_constraints_flat")
+                .map_err(|error| Self::protocol_error("flat capability check failed", error))?
+            {
+                return Ok(None);
+            }
+
+            let result = self
+                .backend
+                .call_method1(
+                    py,
+                    "add_constraints_flat",
+                    (
+                        PyArray1::from_vec(py, row_offsets),
+                        PyArray1::from_vec(py, flat_variables),
+                        PyArray1::from_vec(py, flat_coefficients),
+                        PyArray1::from_vec(py, constants),
+                        PyArray1::from_vec(py, flat_senses),
+                        PyArray1::from_vec(py, rhs),
+                        names.as_ref(),
+                    ),
+                )
+                .map_err(|error| Self::protocol_error("add_constraints_flat failed", error))?;
+            let (start, count) = result.extract::<(usize, usize)>(py).map_err(|error| {
+                Self::protocol_error("invalid add_constraints_flat result", error)
+            })?;
+            ensure_len(count, n, "returned flat constraint count")?;
+            let end = start.checked_add(count).ok_or_else(|| {
+                MoiError::BackendProtocol("returned constraint ID range overflowed".to_string())
+            })?;
+            Ok(Some((start..end).map(ConstrId).collect()))
+        })?;
+        if let Some(ids) = flat_result {
+            return Ok(ids);
+        }
+
         let mut variables = Vec::with_capacity(fs.len());
         let mut coefficients = Vec::with_capacity(fs.len());
         let mut constants = Vec::with_capacity(fs.len());
@@ -152,6 +229,26 @@ impl ModelLike for PyBackend {
             ModelSense::Minimize => -1,
         };
         Python::attach(|py| {
+            if self
+                .backend
+                .bind(py)
+                .hasattr("set_objective_flat")
+                .map_err(|error| Self::protocol_error("flat capability check failed", error))?
+            {
+                self.backend
+                    .call_method1(
+                        py,
+                        "set_objective_flat",
+                        (
+                            PyArray1::from_vec(py, variables),
+                            PyArray1::from_vec(py, linear.coefficients),
+                            linear.constant,
+                            sense,
+                        ),
+                    )
+                    .map_err(|error| Self::protocol_error("set_objective_flat failed", error))?;
+                return Ok(());
+            }
             self.backend
                 .call_method1(
                     py,

@@ -12,6 +12,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 pyo3.workspace = true
+numpy = "0.29.0"
 moi-solver-gurobi.workspace = true
 moi-bridge.workspace = true
 moi-solver-api.workspace = true

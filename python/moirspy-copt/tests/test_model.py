@@ -3,6 +3,8 @@ import sys
 import unittest
 from pathlib import Path
 
+import numpy as np
+
 
 COPT_HOME = Path(os.environ.get("COPT_HOME", r"D:\env\copt80"))
 COPT_DLL = COPT_HOME / "bin" / "copt.dll"
@@ -67,6 +69,38 @@ class LowLevelWindowsCoptTests(unittest.TestCase):
         self.assertEqual(model.optimize(), 1)
         self.assertEqual([round(model.get_var_value(i)) for i in x], [1, 0])
         self.assertAlmostEqual(model.get_objective_value(), 7.0, places=7)
+
+    def test_flat_buffer_constraints_and_objective(self):
+        model = self.new_model("low-level-flat-buffers")
+        x = model.add_variables(2, lbs=[0.0, 0.0], ubs=[10.0, 10.0])
+        returned_range = model.add_constraints_flat(
+            np.asarray([0, 2, 3], dtype=np.uintp),
+            np.asarray([x[0], x[1], x[0]], dtype=np.uintp),
+            np.asarray([1.0, 2.0, 1.0], dtype=np.float64),
+            np.asarray([0.0, 0.0], dtype=np.float64),
+            np.asarray([ord(">"), ord("<")], dtype=np.uint8),
+            np.asarray([4.0, 10.0], dtype=np.float64),
+        )
+        self.assertEqual(returned_range, (0, 2))
+        model.set_objective_flat(
+            np.asarray(x, dtype=np.uintp),
+            np.asarray([1.0, 1.0], dtype=np.float64),
+            3.0,
+            -1,
+        )
+
+        self.assertEqual(model.optimize(), 1)
+        self.assertAlmostEqual(model.get_objective_value(), 5.0, places=7)
+
+        with self.assertRaises(ValueError):
+            model.add_constraints_flat(
+                np.asarray([1, 1], dtype=np.uintp),
+                np.asarray([], dtype=np.uintp),
+                np.asarray([], dtype=np.float64),
+                np.asarray([0.0], dtype=np.float64),
+                np.asarray([ord("=")], dtype=np.uint8),
+                np.asarray([0.0], dtype=np.float64),
+            )
 
     def test_invalid_shapes_senses_and_parameter_types(self):
         model = self.new_model("low-level-invalid-input")
