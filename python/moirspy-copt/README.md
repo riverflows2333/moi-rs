@@ -91,6 +91,10 @@ config.set("Signature", os.environ["COPT_OEM_SIGNATURE"])
 env = Env(config=config)
 ```
 
+The repository benchmark additionally supports a local ignored `.env` file; see
+the root `.env.example`. Installed library code intentionally does not load dotenv
+files implicitly, so applications retain control of their configuration source.
+
 `config` is mutually exclusive with `dll_path` and `license_dir`. If a custom
 native library is needed, pass it when constructing the configuration:
 

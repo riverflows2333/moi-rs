@@ -33,6 +33,11 @@ def solve_objective(tool: str, model: Any) -> float:
     elif tool == "moirspy-copt":
         model.optimize()
         value = model.get_objective_value()
+    elif tool.startswith("pyoptinterface-"):
+        import pyoptinterface as poi
+
+        model.optimize()
+        value = model.get_model_attribute(poi.ModelAttribute.ObjectiveValue)
     else:
         model.solve()
         value = model.objval

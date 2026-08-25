@@ -3,6 +3,9 @@ Cargo.lock
 **/*.rs.bk
 .vscode
 .venv/
+.env
+.env.*
+!.env.example
 __pycache__/
 *_PLAN.md
 input/

@@ -45,6 +45,31 @@ Always rebuild both extensions with `--release` before recording a baseline afte
 Rust changes. The suite reports package versions, extension paths, binary sizes,
 and an inferred debug/release profile so stale local installations are visible.
 
+### Local COPT environment configuration
+
+Benchmarks load COPT environment configuration from process variables and then
+from the repository-root `.env` file. Existing process variables take precedence.
+To use OEM, client certificate, cluster, or Web License settings without placing
+credentials in source code:
+
+```powershell
+Copy-Item .env.example .env
+# Edit .env locally; never commit it.
+```
+
+The real `.env` and `.env.*` files are ignored; only `.env.example` is tracked.
+OEM setup accepts either a complete `COPT_OEM_LICENSE` value using `\n` escapes,
+or `COPT_OEM_VERSION`, `COPT_OEM_EXPIRY`, and `COPT_OEM_TYPE` from which the
+license payload is constructed. `COPT_OEM_NAME` and `COPT_OEM_SIGNATURE` are
+required whenever OEM configuration is enabled. The direct public-API example
+also accepts an explicit file:
+
+```powershell
+uv run python -m benchmark.direct_uc_moirspy `
+    --case input\phys\effi\1-1 `
+    --env-file .env
+```
+
 Available builders are:
 
 - `moirspy-early`: attach COPT before adding variables and constraints, so every
@@ -52,7 +77,32 @@ Available builders are:
 - `moirspy-late`: build through the public API first, then attach COPT and replay
   the completed model;
 - `moirspy-copt`: low-level batched Rust/COPT binding;
-- `coptpy`: official COPT Python modeling API.
+- `coptpy`: official COPT Python modeling API;
+- `pyoptinterface-rows`: PyOptInterface receives the exact same `LinearRow`
+  coefficient stream as the other cross-framework builders and constructs each
+  affine function with `ScalarAffineFunction.add_term`;
+- `pyoptinterface-direct`: the same complete 2-bin UC formulation is written
+  directly with PyOptInterface variables, expressions, `quicksum`, and
+  `add_linear_constraint`, without the benchmark's `VarRef`/`LinearRow` layer.
+
+Install the optional comparison package into the benchmark environment with:
+
+```powershell
+uv pip install --python .\.venv\Scripts\python.exe pyoptinterface==0.6.1 numpy
+```
+
+Both PyOptInterface builders use its COPT backend. Their reusable `copt.Env` is
+created outside the timed region, just like the other COPT builders. Variable
+and constraint names are omitted because that is PyOptInterface's normal fast
+API default; formulation equality is checked through dimensions, nonzeros, and
+the solved verification case rather than generated names.
+
+The rows builder intentionally does not use PyOptInterface's
+`add_m_linear_constraints`: that helper accepts one common sense per matrix and
+internally loops over its dense/sparse rows. The UC formulation mixes equality,
+less-than, and greater-than rows, so constructing `ScalarAffineFunction`
+directly from the shared `LinearRow` stream gives the closest coefficient-for-
+coefficient comparison without adding a separate SciPy preparation step.
 
 Choose a subset with `--tools moirspy-early,moirspy-late`. Each solver environment
 is created once before timing so license and environment startup do not obscure

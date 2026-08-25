@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import ctypes
-import importlib.util
 import importlib.metadata
+import importlib.util
 import json
 import os
 import platform
@@ -119,7 +119,13 @@ def _windows_memory_bytes() -> tuple[int | None, int | None]:
 
 def environment_metadata() -> dict[str, object]:
     packages: dict[str, str] = {}
-    for distribution in ("moirspy", "moirspy-copt", "coptpy"):
+    for distribution in (
+        "moirspy",
+        "moirspy-copt",
+        "coptpy",
+        "pyoptinterface",
+        "numpy",
+    ):
         try:
             packages[distribution] = importlib.metadata.version(distribution)
         except importlib.metadata.PackageNotFoundError:

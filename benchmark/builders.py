@@ -14,6 +14,12 @@ from benchmark.common import (
     iter_constraint_groups,
     iter_objective_terms,
 )
+from benchmark.copt_env import create_copt_env
+from benchmark.pyoptinterface_builders import (
+    build_pyoptinterface_direct,
+    build_pyoptinterface_rows,
+    prepare_pyoptinterface,
+)
 
 
 @dataclass(slots=True)
@@ -23,18 +29,8 @@ class Builder:
     build: Callable[[MinimalUcData, Any], Any]
 
 
-def _copt_dll() -> str | None:
-    home = os.environ.get("COPT_HOME")
-    if not home:
-        return None
-    candidate = Path(home) / "bin" / ("copt.dll" if sys.platform == "win32" else "libcopt.so")
-    return str(candidate) if candidate.is_file() else None
-
-
 def prepare_moirspy() -> Any:
-    from moirspy_copt import Env
-
-    return Env(_copt_dll())
+    return create_copt_env()
 
 
 def _block_kind(block: str) -> tuple[str, float]:
@@ -133,9 +129,7 @@ def profile_moirspy(
 
 
 def prepare_moirspy_copt() -> Any:
-    from moirspy_copt import Env
-
-    return Env(_copt_dll())
+    return create_copt_env()
 
 
 def build_moirspy_copt(data: MinimalUcData, env: Any) -> Any:
@@ -244,4 +238,10 @@ BUILDERS = {
     "moirspy-late": Builder("moirspy-late", prepare_moirspy, build_moirspy_late),
     "moirspy-copt": Builder("moirspy-copt", prepare_moirspy_copt, build_moirspy_copt),
     "coptpy": Builder("coptpy", prepare_coptpy, build_coptpy),
+    "pyoptinterface-rows": Builder(
+        "pyoptinterface-rows", prepare_pyoptinterface, build_pyoptinterface_rows
+    ),
+    "pyoptinterface-direct": Builder(
+        "pyoptinterface-direct", prepare_pyoptinterface, build_pyoptinterface_direct
+    ),
 }
