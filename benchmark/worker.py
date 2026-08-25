@@ -6,7 +6,7 @@ import json
 import time
 
 from benchmark.builders import BUILDERS
-from benchmark.common import load_minimal_uc
+from benchmark.common import formulation_stats, load_minimal_uc
 from benchmark.metrics import TimingSummary, process_memory_bytes
 
 
@@ -45,6 +45,7 @@ def main() -> int:
         return emit({"status": "failed", "error": f"{type(error).__name__}: {error}"})
 
     current_rss, peak_rss = process_memory_bytes()
+    stats = formulation_stats(data)
     summary = TimingSummary.from_samples(samples)
     return emit(
         {
@@ -55,9 +56,7 @@ def main() -> int:
             "storages": data.num_storages,
             "sections": len(data.sections),
             "periods": data.num_periods,
-            "variables": data.num_variables,
-            "constraints": data.num_constraints,
-            "nonzeros": data.num_nonzeros,
+            **stats.as_dict(),
             "timing": {
                 "median": summary.median,
                 "p95": summary.p95,

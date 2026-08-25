@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
 from pathlib import Path
+import struct
 from typing import Iterable, Iterator
 
 
@@ -128,6 +130,105 @@ class MinimalUcData:
     @property
     def num_nonzeros(self) -> int:
         return sum(len(row.terms) for _, rows in iter_constraint_groups(self) for row in rows)
+
+
+@dataclass(frozen=True, slots=True)
+class ConstraintFamilyStats:
+    rows: int
+    nonzeros: int
+
+
+@dataclass(frozen=True, slots=True)
+class FormulationStats:
+    variables: int
+    constraints: int
+    nonzeros: int
+    objective_nonzeros: int
+    families: tuple[tuple[str, ConstraintFamilyStats], ...]
+    fingerprint: str | None = None
+
+    def as_dict(self) -> dict[str, object]:
+        result: dict[str, object] = {
+            "variables": self.variables,
+            "constraints": self.constraints,
+            "nonzeros": self.nonzeros,
+            "objective_nonzeros": self.objective_nonzeros,
+            "families": {
+                name: {"rows": stats.rows, "nonzeros": stats.nonzeros}
+                for name, stats in self.families
+            },
+        }
+        if self.fingerprint is not None:
+            result["fingerprint"] = self.fingerprint
+        return result
+
+
+def formulation_stats(
+    data: MinimalUcData, *, include_fingerprint: bool = False
+) -> FormulationStats:
+    """Return solver-independent statistics for Direct/Cached comparisons.
+
+    The optional fingerprint covers the variable layout, every linear row, and
+    the objective using a versioned little-endian encoding. It is deliberately
+    computed outside benchmark timing regions.
+    """
+
+    layout = data.layout
+    digest = hashlib.sha256() if include_fingerprint else None
+    if digest is not None:
+        digest.update(b"moi-rs-complete-2bin-v1\0")
+        for block in VARIABLE_BLOCKS:
+            encoded = block.encode("utf-8")
+            digest.update(struct.pack("<Q", len(encoded)))
+            digest.update(encoded)
+            digest.update(struct.pack("<Q", layout.block_sizes[block]))
+
+    families: list[tuple[str, ConstraintFamilyStats]] = []
+    constraints = 0
+    nonzeros = 0
+    for family, rows in iter_constraint_groups(data):
+        family_rows = 0
+        family_nonzeros = 0
+        if digest is not None:
+            encoded = family.encode("utf-8")
+            digest.update(struct.pack("<Q", len(encoded)))
+            digest.update(encoded)
+        for row in rows:
+            family_rows += 1
+            family_nonzeros += len(row.terms)
+            if digest is not None:
+                digest.update(row.sense.encode("ascii"))
+                digest.update(struct.pack("<dQ", row.rhs, len(row.terms)))
+                for variable, coefficient in row.terms:
+                    digest.update(
+                        struct.pack(
+                            "<Qd", layout.global_index(variable), coefficient
+                        )
+                    )
+        constraints += family_rows
+        nonzeros += family_nonzeros
+        families.append(
+            (family, ConstraintFamilyStats(family_rows, family_nonzeros))
+        )
+
+    objective_nonzeros = 0
+    if digest is not None:
+        digest.update(b"objective\0")
+    for variable, coefficient in iter_objective_terms(data):
+        objective_nonzeros += 1
+        if digest is not None:
+            digest.update(
+                struct.pack("<Qd", layout.global_index(variable), coefficient)
+            )
+
+    return FormulationStats(
+        variables=layout.total,
+        constraints=constraints,
+        nonzeros=nonzeros,
+        objective_nonzeros=objective_nonzeros,
+        families=tuple(families),
+        fingerprint=digest.hexdigest() if digest is not None else None,
+    )
 
 
 def _numeric_rows(path: Path, columns: int | None = None) -> list[list[float]]:

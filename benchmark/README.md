@@ -127,6 +127,34 @@ allocator state or peak working set from contaminating the next tool. Peak RSS i
 an OS process high-water mark; `Peak delta` subtracts the high-water mark already
 reached immediately after builder environment preparation.
 
+### Direct migration baseline
+
+Before changing the model runtime, verify the machine-independent formulation
+contract for `1-1`, `1-3`, and `1-5`:
+
+```powershell
+uv run python -m benchmark.baseline
+```
+
+The tracked `baselines/direct_migration_v1.json` records variables, rows, nonzeros,
+objective nonzeros, per-family row/nonzero counts, and a versioned SHA-256 over the
+complete coefficient/RHS/objective stream. Timing and RSS remain machine-local in
+the ignored `benchmark/results` directory. A reproducible D0 timing run is:
+
+```powershell
+uv run python -m benchmark.run_suite `
+    --cases 1-1 1-3 1-5 `
+    --tools moirspy-early,moirspy-late,moirspy-copt,pyoptinterface-rows,pyoptinterface-direct,coptpy `
+    --warmup 1 --repeat 5 `
+    --json benchmark\results\direct_migration_d0_windows.json `
+    --markdown benchmark\results\direct_migration_d0_windows.md
+```
+
+The synthetic verification model fixes the expected solved objective at `5040.0`.
+The Windows differential test additionally compares the same binary model across
+COPT/Gurobi and early/late attachment. These assertions are intended to be shared
+by the later Direct and Cached runtime paths.
+
 Use `1-1` while iterating. Run `1-2` through `1-5` only after correctness and
 memory behavior are stable; the same parser and formulation scale without case-
 specific branches.

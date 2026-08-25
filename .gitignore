@@ -12,3 +12,4 @@ input/
 crates/moi-solver-copt/src/bindings/gen.rs
 benchmark/results/
 *_oem.py
+benchmark/baselines/

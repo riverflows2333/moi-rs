@@ -1,7 +1,7 @@
 from pathlib import Path
 import unittest
 
-from benchmark.common import iter_constraint_groups, load_minimal_uc
+from benchmark.common import formulation_stats, iter_constraint_groups, load_minimal_uc
 from benchmark.verify_model import verification_case
 
 
@@ -40,6 +40,19 @@ class CompleteUcDataTests(unittest.TestCase):
         self.assertEqual(data.num_constraints, 128)
         self.assertEqual(data.num_nonzeros, 313)
         self.assertTrue(all(count > 0 for count in family_counts.values()))
+
+    def test_verification_case_has_stable_formulation_fingerprint(self):
+        stats = formulation_stats(verification_case(), include_fingerprint=True)
+
+        self.assertEqual(stats.variables, 68)
+        self.assertEqual(stats.constraints, 128)
+        self.assertEqual(stats.nonzeros, 313)
+        self.assertEqual(stats.objective_nonzeros, 24)
+        self.assertEqual(
+            stats.fingerprint,
+            "986d6433c3d1fee9923d947734d1d4bcf0ff4c9806f6bb50bcae0cae8a113416",
+        )
+        self.assertTrue(all(item.rows > 0 for _, item in stats.families))
 
 
 if __name__ == "__main__":
