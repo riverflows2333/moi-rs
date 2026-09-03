@@ -1,19 +1,17 @@
 use crate::constr::Constr;
 use crate::expr::LinExpr;
 use crate::moi::*;
+use crate::runtime::ModelRuntime;
 use crate::utils::*;
 use crate::var::*;
-use moi_bridge::BridgeOptimizer;
 use moi_core::*;
 use moi_solver_api::*;
 use pyo3::prelude::*;
 use pyo3::types::{PyAny, PyTuple};
-use std::sync::{Arc, Mutex};
 #[pyclass]
 pub struct Model {
     name: String,
-    model: SharedBridge,
-    backend: Option<Py<PyAny>>,
+    runtime: ModelRuntime,
 }
 
 #[pymethods]
@@ -22,8 +20,7 @@ impl Model {
     fn new(name: String) -> Self {
         Model {
             name,
-            model: Arc::new(Mutex::new(BridgeOptimizer::new())),
-            backend: None,
+            runtime: ModelRuntime::new_cached(),
         }
     }
 
@@ -37,7 +34,11 @@ impl Model {
         name: &str,
     ) -> PyResult<Var> {
         validate_objective_coefficients(&[obj])?;
-        let mut model = lock_bridge(&self.model)?;
+        let shared = self
+            .runtime
+            .cached_bridge("add variable")
+            .map_err(to_py_runtime_error)?;
+        let mut model = lock_bridge(shared)?;
         let var_id = model
             .add_variable(
                 Some(name),
@@ -51,7 +52,8 @@ impl Model {
             )
             .map_err(to_py_runtime_error)?;
         let mut var = Var::new(var_id.0);
-        var.set_bridge(&self.model);
+        drop(model);
+        var.set_bridge(shared);
         Ok(var)
     }
     #[pyo3(signature = (*indices, lb=None, ub=None, obj=None, vtype=None, name=None),name="addVars")]
@@ -122,7 +124,11 @@ impl Model {
         } else {
             name_param
         };
-        let mut model = lock_bridge(&self.model)?;
+        let shared = self
+            .runtime
+            .cached_bridge("add variables")
+            .map_err(to_py_runtime_error)?;
+        let mut model = lock_bridge(shared)?;
         let varids = model
             .add_variables(
                 num_vars,
@@ -144,7 +150,8 @@ impl Model {
             .map_err(to_py_runtime_error)?;
         let var_ids = varids;
         let mut vars = Vars::new(shape_vec.clone(), var_ids);
-        vars.set_bridge(&self.model);
+        drop(model);
+        vars.set_bridge(shared);
         Ok(vars)
     }
 
@@ -152,7 +159,11 @@ impl Model {
     fn add_constr(&mut self, constr: &Bound<'_, Constr>, name: Option<&str>) -> PyResult<()> {
         let constr: Constr = constr.extract()?;
 
-        let mut model = lock_bridge(&self.model)?;
+        let shared = self
+            .runtime
+            .cached_bridge("add constraint")
+            .map_err(to_py_runtime_error)?;
+        let mut model = lock_bridge(shared)?;
         model
             .add_constraint(constr.get_f(), constr.get_s(), name.map(str::to_string))
             .map_err(to_py_runtime_error)?;
@@ -190,7 +201,11 @@ impl Model {
             name_param
         };
 
-        let mut model = lock_bridge(&self.model)?;
+        let shared = self
+            .runtime
+            .cached_bridge("add constraints")
+            .map_err(to_py_runtime_error)?;
+        let mut model = lock_bridge(shared)?;
         model
             .add_constraints(fs, ss, Some(name_param.to_vec(Some(count))))
             .map_err(to_py_runtime_error)?;
@@ -199,7 +214,11 @@ impl Model {
     #[pyo3(signature = (expr, sense),name="setObjective")]
     fn set_objective(&mut self, expr: &Bound<'_, PyAny>, sense: Sense) -> PyResult<()> {
         let obj_expr = expr.extract::<LinExpr>()?;
-        let mut model = lock_bridge(&self.model)?;
+        let shared = self
+            .runtime
+            .cached_bridge("set objective")
+            .map_err(to_py_runtime_error)?;
+        let mut model = lock_bridge(shared)?;
         model
             .set_objective(
                 ScalarFunctionType::Affine(obj_expr.get_fn()),
@@ -229,7 +248,11 @@ impl Model {
             ));
         };
 
-        let mut model = lock_bridge(&self.model)?;
+        let shared = self
+            .runtime
+            .cached_bridge("set parameter")
+            .map_err(to_py_runtime_error)?;
+        let mut model = lock_bridge(shared)?;
         model
             .set_optimizer_attr(attr, val)
             .map_err(to_py_runtime_error)?;
@@ -253,20 +276,18 @@ impl Model {
                 ))
             })?;
 
-        use crate::py_backend::PyBackend;
-        let py_backend = Box::new(PyBackend::new(model_instance.clone().into()));
-
-        let mut bridge = lock_bridge(&self.model)?;
-        bridge
-            .attach_backend(py_backend)
-            .map_err(to_py_runtime_error)?;
-
-        self.backend = Some(model_instance.into());
-        Ok(())
+        self.runtime
+            .cached_mut("set backend")
+            .map_err(to_py_runtime_error)?
+            .attach_python_backend(model_instance)
     }
     // 调用底层求解器进行优化
     fn optimize(&mut self, _py: Python) -> PyResult<()> {
-        let mut bridge = lock_bridge(&self.model)?;
+        let shared = self
+            .runtime
+            .cached_bridge("optimize")
+            .map_err(to_py_runtime_error)?;
+        let mut bridge = lock_bridge(shared)?;
         bridge.optimize().map(|_| ()).map_err(to_py_runtime_error)
     }
     fn __str__(&self) -> PyResult<String> {
@@ -275,7 +296,11 @@ impl Model {
     #[getter]
     #[pyo3(name = "ObjVal")]
     pub fn get_objval(&self) -> PyResult<Option<f64>> {
-        let bridge = lock_bridge(&self.model)?;
+        let shared = self
+            .runtime
+            .cached_bridge("get objective value")
+            .map_err(to_py_runtime_error)?;
+        let bridge = lock_bridge(shared)?;
         bridge.get_objective_value().map_err(to_py_runtime_error)
     }
 }
