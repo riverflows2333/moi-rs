@@ -11,14 +11,12 @@ if sys.platform == "win32" and COPT_DLL.exists():
     os.environ["COPT_HOME"] = str(COPT_HOME)
 
 try:
-    from moirspy import MOI, Model
-    from moirspy_copt import Env as CoptEnv
-    from moirspy_copt import EnvrConfig as CoptEnvrConfig
+    from moirspy import CoptEnv, CoptEnvConfig, MOI, Model
 except ImportError:
     MOI = None
     Model = None
     CoptEnv = None
-    CoptEnvrConfig = None
+    CoptEnvConfig = None
 
 
 @unittest.skipUnless(
@@ -113,7 +111,7 @@ class WindowsCoptModelTests(unittest.TestCase):
         self.assertAlmostEqual(x.X, 3.0, places=7)
 
     def test_configured_environment_through_high_level_model(self):
-        config = CoptEnvrConfig(str(COPT_DLL))
+        config = CoptEnvConfig(str(COPT_DLL))
         config.set("NoBanner", 1)
         env = CoptEnv(config=config)
 
@@ -125,6 +123,56 @@ class WindowsCoptModelTests(unittest.TestCase):
 
         self.assertAlmostEqual(model.ObjVal, 4.0, places=7)
         self.assertAlmostEqual(x.X, 4.0, places=7)
+
+    def test_license_directory_environment_can_be_reused(self):
+        env = CoptEnv(license_dir=str(COPT_HOME))
+        objectives = []
+        for index, value in enumerate((2.0, 5.0)):
+            model = self.new_model(f"copt-shared-env-{index}")
+            x = model.addVar(lb=value, ub=value)
+            model.setObjective(1.0 * x, MOI.MINIMIZE)
+            model.setBackend("copt", env=env)
+            model.optimize()
+            objectives.append(model.ObjVal)
+
+        self.assertEqual(objectives, [2.0, 5.0])
+
+    def test_environment_config_rejects_embedded_nul(self):
+        config = CoptEnvConfig(str(COPT_DLL))
+        with self.assertRaisesRegex(ValueError, "embedded NUL") as context:
+            config.set("OEM", "private-value\0suffix")
+        self.assertNotIn("private-value", str(context.exception))
+
+    def test_builtin_backend_does_not_import_python_solver_package(self):
+        previous = sys.modules.get("moirspy_copt")
+        sys.modules["moirspy_copt"] = None
+        try:
+            model = self.new_model("copt-native-no-plugin")
+            x = model.addVar(lb=2.0, ub=2.0)
+            model.setObjective(1.0 * x, MOI.MINIMIZE)
+            model.setBackend("copt")
+            model.optimize()
+            self.assertAlmostEqual(model.ObjVal, 2.0, places=7)
+        finally:
+            if previous is None:
+                sys.modules.pop("moirspy_copt", None)
+            else:
+                sys.modules["moirspy_copt"] = previous
+
+    def test_legacy_solver_environment_remains_accepted(self):
+        try:
+            from moirspy_copt import Env as LegacyCoptEnv
+        except ImportError as error:
+            self.skipTest(f"optional moirspy-copt package is unavailable: {error}")
+
+        env = LegacyCoptEnv(str(COPT_DLL))
+        model = self.new_model("copt-legacy-env")
+        x = model.addVar(lb=3.0, ub=3.0)
+        model.setObjective(1.0 * x, MOI.MINIMIZE)
+        model.setBackend("copt", env=env)
+        model.optimize()
+
+        self.assertAlmostEqual(model.ObjVal, 3.0, places=7)
 
 
 if __name__ == "__main__":

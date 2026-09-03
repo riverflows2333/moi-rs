@@ -158,16 +158,32 @@ def copt_config_values(environ: Mapping[str, str] | None = None) -> dict[str, st
 
 
 def create_copt_env(env_file: str | Path | None = None) -> Any:
-    """Load configuration and create a reusable ``moirspy_copt.Env``."""
+    """Create the built-in ``moirspy.CoptEnv`` used by high-level models."""
 
-    load_env_file(env_file, required=env_file is not None)
+    from moirspy import CoptEnv, CoptEnvConfig
+
+    return _create_copt_env(CoptEnv, CoptEnvConfig, env_file)
+
+
+def create_legacy_copt_env(env_file: str | Path | None = None) -> Any:
+    """Create ``moirspy_copt.Env`` for the standalone low-level benchmark."""
+
     from moirspy_copt import Env, EnvrConfig
 
+    return _create_copt_env(Env, EnvrConfig, env_file)
+
+
+def _create_copt_env(
+    env_type: Any, config_type: Any, env_file: str | Path | None
+) -> Any:
+    """Load dotenv values and instantiate the selected COPT environment type."""
+
+    load_env_file(env_file, required=env_file is not None)
     values = copt_config_values()
     dll_path = os.environ.get("COPT_DLL_PATH") or None
     if not values and dll_path is None:
-        return Env()
-    config = EnvrConfig(dll_path)
+        return env_type()
+    config = config_type(dll_path)
     for name, value in values.items():
         config.set(name, value)
-    return Env(config=config)
+    return env_type(config=config)

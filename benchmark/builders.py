@@ -14,7 +14,7 @@ from benchmark.common import (
     iter_constraint_groups,
     iter_objective_terms,
 )
-from benchmark.copt_env import create_copt_env
+from benchmark.copt_env import create_copt_env, create_legacy_copt_env
 from benchmark.pyoptinterface_builders import (
     build_pyoptinterface_direct,
     build_pyoptinterface_rows,
@@ -129,7 +129,7 @@ def profile_moirspy(
 
 
 def prepare_moirspy_copt() -> Any:
-    return create_copt_env()
+    return create_legacy_copt_env()
 
 
 def build_moirspy_copt(data: MinimalUcData, env: Any) -> Any:

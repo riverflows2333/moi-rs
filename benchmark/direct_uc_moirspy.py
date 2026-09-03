@@ -19,8 +19,7 @@ from pathlib import Path
 from time import perf_counter
 from typing import Any
 
-from moirspy import MOI, Model, quicksum
-from moirspy_copt import Env
+from moirspy import MOI, CoptEnv, Model, quicksum
 
 from benchmark.copt_env import create_copt_env
 from benchmark.direct_uc_data import UcData, load_uc_data
@@ -380,7 +379,7 @@ def _add_system_constraints(
 
 def build_uc_model(
     data: UcData,
-    env: Env,
+    env: CoptEnv,
     *,
     attach_early: bool = True,
     logging: int = 0,
