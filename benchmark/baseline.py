@@ -8,9 +8,7 @@ from typing import Any, Mapping
 from benchmark.common import FormulationStats, formulation_stats, load_minimal_uc
 
 
-DEFAULT_BASELINE = (
-    Path(__file__).resolve().parent / "baselines" / "direct_migration_v1.json"
-)
+DEFAULT_BASELINE = Path(__file__).resolve().parent / "direct_migration_contract_v1.json"
 
 
 def load_baseline(path: str | Path = DEFAULT_BASELINE) -> dict[str, Any]:

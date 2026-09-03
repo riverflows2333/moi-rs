@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "description": "Complete 2-bin UC formulation contract before Direct model migration",
+  "timing_boundary": "in-memory MinimalUcData to native model ready; solve excluded",
+  "verification_objective": 5040.0,
+  "cases": {
+    "1-1": {
+      "variables": 58080,
+      "constraints": 147899,
+      "nonzeros": 883717,
+      "objective_nonzeros": 22080,
+      "families": {
+        "thermal_state": {"rows": 29158, "nonzeros": 308652},
+        "thermal_output": {"rows": 19200, "nonzeros": 38400},
+        "thermal_ramping": {"rows": 19200, "nonzeros": 57300},
+        "thermal_cost": {"rows": 57600, "nonzeros": 163200},
+        "storage_output": {"rows": 4320, "nonzeros": 8640},
+        "storage_state": {"rows": 4290, "nonzeros": 8580},
+        "storage_energy": {"rows": 1455, "nonzeros": 141135},
+        "storage_duration": {"rows": 2500, "nonzeros": 12274},
+        "storage_cost": {"rows": 8640, "nonzeros": 23424},
+        "sections": {"rows": 1344, "nonzeros": 90432},
+        "balance": {"rows": 96, "nonzeros": 12480},
+        "reserve": {"rows": 96, "nonzeros": 19200}
+      },
+      "fingerprint": "53f7c73c5b6f0828de0f8e5733a9059e1b12922b490e71ab9d1acfa8b4f6dcc7"
+    },
+    "1-3": {
+      "variables": 266400,
+      "constraints": 685768,
+      "nonzeros": 4249530,
+      "objective_nonzeros": 103872,
+      "families": {
+        "thermal_state": {"rows": 147252, "nonzeros": 1555649},
+        "thermal_output": {"rows": 97152, "nonzeros": 194304},
+        "thermal_ramping": {"rows": 97152, "nonzeros": 289938},
+        "thermal_cost": {"rows": 291456, "nonzeros": 825792},
+        "storage_output": {"rows": 10080, "nonzeros": 20160},
+        "storage_state": {"rows": 10010, "nonzeros": 20020},
+        "storage_energy": {"rows": 3395, "nonzeros": 329315},
+        "storage_duration": {"rows": 7575, "nonzeros": 35152},
+        "storage_cost": {"rows": 20160, "nonzeros": 54144},
+        "sections": {"rows": 1344, "nonzeros": 772608},
+        "balance": {"rows": 96, "nonzeros": 55296},
+        "reserve": {"rows": 96, "nonzeros": 97152}
+      },
+      "fingerprint": "17cb21c3534ab791df8801ee60d5f21b47da5d7be18f63cd9a3e5a370f385278"
+    },
+    "1-5": {
+      "variables": 824640,
+      "constraints": 2102901,
+      "nonzeros": 12923569,
+      "objective_nonzeros": 318336,
+      "families": {
+        "thermal_state": {"rows": 438027, "nonzeros": 4530933},
+        "thermal_output": {"rows": 289536, "nonzeros": 579072},
+        "thermal_ramping": {"rows": 289536, "nonzeros": 864084},
+        "thermal_cost": {"rows": 868608, "nonzeros": 2461056},
+        "storage_output": {"rows": 43200, "nonzeros": 86400},
+        "storage_state": {"rows": 42900, "nonzeros": 85800},
+        "storage_energy": {"rows": 14550, "nonzeros": 1411350},
+        "storage_duration": {"rows": 28800, "nonzeros": 132490},
+        "storage_cost": {"rows": 86400, "nonzeros": 231840},
+        "sections": {"rows": 1152, "nonzeros": 2077440},
+        "balance": {"rows": 96, "nonzeros": 173568},
+        "reserve": {"rows": 96, "nonzeros": 289536}
+      },
+      "fingerprint": "f449afa7c91a7b525da8bc74e0dfc1b14f8068eb9543b79120217ee22c2237af"
+    }
+  }
+}

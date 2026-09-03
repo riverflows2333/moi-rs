@@ -136,7 +136,7 @@ contract for `1-1`, `1-3`, and `1-5`:
 uv run python -m benchmark.baseline
 ```
 
-The tracked `baselines/direct_migration_v1.json` records variables, rows, nonzeros,
+The tracked `direct_migration_contract_v1.json` records variables, rows, nonzeros,
 objective nonzeros, per-family row/nonzero counts, and a versioned SHA-256 over the
 complete coefficient/RHS/objective stream. Timing and RSS remain machine-local in
 the ignored `benchmark/results` directory. A reproducible D0 timing run is:
