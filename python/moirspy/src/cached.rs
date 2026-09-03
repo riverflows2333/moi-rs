@@ -1,6 +1,7 @@
 use crate::py_backend::PyBackend;
 use crate::utils::{SharedBridge, lock_bridge, to_py_runtime_error};
 use moi_bridge::BridgeOptimizer;
+use moi_solver_api::Optimizer;
 use pyo3::prelude::*;
 use pyo3::types::PyAny;
 use std::sync::{Arc, Mutex};
@@ -33,6 +34,16 @@ impl CachedModel {
             .map_err(to_py_runtime_error)?;
         drop(bridge);
         self._backend = Some(model_instance.into());
+        Ok(())
+    }
+
+    pub fn attach_native_backend(&mut self, backend: Box<dyn Optimizer + Send>) -> PyResult<()> {
+        let mut bridge = lock_bridge(&self.bridge)?;
+        bridge
+            .attach_backend(backend)
+            .map_err(to_py_runtime_error)?;
+        drop(bridge);
+        self._backend = None;
         Ok(())
     }
 }

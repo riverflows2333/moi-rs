@@ -1,5 +1,5 @@
 import types
-from typing import Iterable, List, Optional, Tuple, Union, overload
+from typing import ClassVar, Iterable, List, Optional, Tuple, Union, overload
 
 Number = Union[int, float]
 
@@ -17,6 +17,35 @@ class _MOI(types.ModuleType):
     MAXIMIZE: _Sense
 
 MOI: _MOI
+
+EnvConfigValue = Union[str, bool, int, float]
+
+class COPT:
+    CLIENT_CAFILE: ClassVar[str]
+    CLIENT_CERTFILE: ClassVar[str]
+    CLIENT_CERTKEYFILE: ClassVar[str]
+    CLIENT_CLUSTER: ClassVar[str]
+    CLIENT_FLOATING: ClassVar[str]
+    CLIENT_PASSWORD: ClassVar[str]
+    CLIENT_PORT: ClassVar[str]
+    CLIENT_PRIORITY: ClassVar[str]
+    CLIENT_WAITTIME: ClassVar[str]
+    CLIENT_WEBSERVER: ClassVar[str]
+    CLIENT_WEBLICENSEID: ClassVar[str]
+    CLIENT_WEBACCESSKEY: ClassVar[str]
+    CLIENT_WEBTOKENDURATION: ClassVar[str]
+
+class CoptEnvConfig:
+    def __init__(self, dll_path: Optional[str] = ...) -> None: ...
+    def set(self, name: str, value: EnvConfigValue) -> None: ...
+
+class CoptEnv:
+    def __init__(
+        self,
+        dll_path: Optional[str] = ...,
+        license_dir: Optional[str] = ...,
+        config: Optional[CoptEnvConfig] = ...,
+    ) -> None: ...
 
 class Constr:
     """A pending scalar linear constraint created by a comparison."""
@@ -85,7 +114,9 @@ class Model:
     ) -> None: ...
     def setObjective(self, expr: LinExpr, sense: _Sense) -> None: ...
     def setParam(self, paramname: str, newvalue: Union[bool, int, float, str]) -> None: ...
-    def setBackend(self, backend: str, env: Optional[object] = ...) -> None: ...
+    def setBackend(
+        self, backend: str, env: Optional[Union[CoptEnv, object]] = ...
+    ) -> None: ...
     def optimize(self) -> None: ...
     @property
     def ObjVal(self) -> Optional[float]: ...

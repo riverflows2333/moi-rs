@@ -1,3 +1,4 @@
+pub mod backends;
 pub mod cached;
 pub mod constr;
 pub mod direct;
@@ -15,6 +16,9 @@ use pyo3::prelude::*;
 
 #[pymodule]
 mod moirspy {
+    #[pymodule_export]
+    use crate::backends::copt::{CoptConstants, CoptEnv, CoptEnvConfig};
+
     use crate::moi::*;
 
     #[pymodule_export]

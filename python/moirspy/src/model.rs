@@ -1,3 +1,4 @@
+use crate::backends::copt::{CoptEnv, create_optimizer as create_copt_optimizer};
 use crate::constr::Constr;
 use crate::expr::LinExpr;
 use crate::moi::*;
@@ -263,6 +264,26 @@ impl Model {
     #[pyo3(name = "setBackend")]
     #[pyo3(signature = (backend, env=None))]
     fn set_backend(&mut self, py: Python, backend: &str, env: Option<Py<PyAny>>) -> PyResult<()> {
+        if backend == "copt" {
+            if let Some(env_handle) = env.as_ref() {
+                if let Ok(copt_env) = env_handle.bind(py).extract::<PyRef<'_, CoptEnv>>() {
+                    let optimizer = create_copt_optimizer(Some(&copt_env))?;
+                    return self
+                        .runtime
+                        .cached_mut("set backend")
+                        .map_err(to_py_runtime_error)?
+                        .attach_native_backend(optimizer);
+                }
+            } else {
+                let optimizer = create_copt_optimizer(None)?;
+                return self
+                    .runtime
+                    .cached_mut("set backend")
+                    .map_err(to_py_runtime_error)?
+                    .attach_native_backend(optimizer);
+            }
+        }
+
         let model_instance = py
             .import(format!("moirspy_{backend}"))
             .and_then(|module| module.getattr("Model"))

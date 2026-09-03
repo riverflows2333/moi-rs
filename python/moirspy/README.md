@@ -9,11 +9,11 @@ pluggable solver backends.
 
 ## Installation
 
-Install the modeling package and a backend. For Gurobi or COPT:
+Install the modeling package and the optional Gurobi backend:
 
 ```bash
 python -m pip install moirspy moirspy-gurobi
-python -m pip install moirspy moirspy-copt
+python -m pip install moirspy
 ```
 
 Solver backends require the corresponding native solver installation and
@@ -64,9 +64,10 @@ print("objective:", model.ObjVal)
 print("x:", [x[i].X for i in range(3)])
 ```
 
-The bridge synchronizes existing variables, constraints, the objective, and
-parameters when the backend is attached. Later model changes are forwarded to
-the attached backend incrementally.
+The COPT backend is built into `moirspy` and calls the native Rust optimizer
+without importing `moirspy_copt`. The separate package remains available as a
+low-level compatibility API. Gurobi still uses its backend package in this
+release. The bridge synchronizes existing model data when a backend is attached.
 
 ## Main API
 
@@ -81,6 +82,8 @@ the attached backend incrementally.
 - `Model.setBackend("gurobi", env=None)` or `Model.setBackend("copt", env=None)`
   attaches the installed backend and optionally forwards an explicit solver
   environment.
+- `CoptEnv(...)` and `CoptEnvConfig(...)` configure the built-in native COPT
+  backend, including explicit library, license-directory, client, and OEM setup.
 - `Model.optimize()` solves the model; use `Model.ObjVal` and `Var.X` for results.
 
 Available variable types are `MOI.CONTINUOUS`, `MOI.BINARY`, and `MOI.INTEGER`.
