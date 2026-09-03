@@ -84,6 +84,20 @@ print("x:", [x[i].X for i in range(3)])
 data is synchronized when the backend is attached, and subsequent variables,
 constraints, objectives, and parameters are forwarded incrementally.
 
+For COPT models whose solver is known up front, construct a native Direct model:
+
+```python
+from moirspy import CoptEnv, Model
+
+env = CoptEnv()
+model = Model("direct-copt", backend="copt", env=env)
+```
+
+This path sends model operations directly to the Rust COPT optimizer and does
+not retain the replayable variable/constraint cache. The default
+`Model(name)` plus `setBackend(...)` workflow remains available when the model
+must be built before choosing a solver.
+
 ## Modeling API
 
 ### Variables

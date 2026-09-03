@@ -82,6 +82,10 @@ release. The bridge synchronizes existing model data when a backend is attached.
 - `Model.setBackend("gurobi", env=None)` or `Model.setBackend("copt", env=None)`
   attaches the installed backend and optionally forwards an explicit solver
   environment.
+- `Model(name, backend="copt", env=None)` creates a native Direct model. Its
+  variables, constraints, objective, and parameters go straight to COPT without
+  retaining a replayable model cache. Use the default constructor followed by
+  `setBackend` when late solver selection or replay is required.
 - `CoptEnv(...)` and `CoptEnvConfig(...)` configure the built-in native COPT
   backend, including explicit library, license-directory, client, and OEM setup.
 - `Model.optimize()` solves the model; use `Model.ObjVal` and `Var.X` for results.
