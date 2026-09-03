@@ -386,9 +386,12 @@ def build_uc_model(
     threads: int | None = None,
 ) -> tuple[Model, UcVariables]:
     """Build a complete UC model directly through the public moirspy API."""
-    model = Model(f"direct-2bin-uc-{data.case_dir.name}")
-    if attach_early:
-        model.setBackend("copt", env=env)
+    model_name = f"direct-2bin-uc-{data.case_dir.name}"
+    model = (
+        Model(model_name, backend="copt", env=env)
+        if attach_early
+        else Model(model_name)
+    )
     model.setParam("Logging", logging)
     if threads is not None:
         model.setParam("Threads", threads)

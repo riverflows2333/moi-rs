@@ -59,10 +59,14 @@ def _build_moirspy(
             stage_times[stage] = stage_times.get(stage, 0.0) + now - last_mark
             last_mark = now
 
-    model = Model(f"complete-2bin-uc-moirspy-{'early' if attach_early else 'late'}")
+    model_name = f"complete-2bin-uc-moirspy-{'direct' if attach_early else 'late'}"
+    model = (
+        Model(model_name, backend="copt", env=env)
+        if attach_early
+        else Model(model_name)
+    )
     mark("model")
     if attach_early:
-        model.setBackend("copt", env=env)
         mark("attach")
 
     blocks: dict[str, Any] = {}
