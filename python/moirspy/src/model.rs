@@ -1,5 +1,6 @@
 use crate::backends::copt::{CoptEnv, create_optimizer as create_copt_optimizer};
 use crate::constr::Constr;
+use crate::direct::DirectModel;
 use crate::expr::LinExpr;
 use crate::moi::*;
 use crate::runtime::ModelRuntime;
@@ -18,11 +19,42 @@ pub struct Model {
 #[pymethods]
 impl Model {
     #[new]
-    fn new(name: String) -> Self {
-        Model {
-            name,
-            runtime: ModelRuntime::new_cached(),
-        }
+    #[pyo3(signature = (name, backend=None, env=None))]
+    fn new(
+        py: Python<'_>,
+        name: String,
+        backend: Option<&str>,
+        env: Option<Py<PyAny>>,
+    ) -> PyResult<Self> {
+        let runtime = match backend {
+            None if env.is_none() => ModelRuntime::new_cached(),
+            None => {
+                return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                    "env requires an explicit backend",
+                ));
+            }
+            Some("copt") => {
+                let optimizer = match env.as_ref() {
+                    Some(env) => {
+                        let copt_env =
+                            env.bind(py).extract::<PyRef<'_, CoptEnv>>().map_err(|_| {
+                                PyErr::new::<pyo3::exceptions::PyTypeError, _>(
+                                    "Model(..., backend='copt', env=...) requires moirspy.CoptEnv",
+                                )
+                            })?;
+                        create_copt_optimizer(Some(&copt_env))?
+                    }
+                    None => create_copt_optimizer(None)?,
+                };
+                ModelRuntime::Direct(DirectModel::with_optimizer(optimizer))
+            }
+            Some(other) => {
+                return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                    "direct backend '{other}' is not available; currently supported: 'copt'"
+                )));
+            }
+        };
+        Ok(Model { name, runtime })
     }
 
     #[pyo3(signature = (lb=0., ub=f64::INFINITY, obj=0.0, vtype=None, name=""),name="addVar")]
@@ -35,26 +67,37 @@ impl Model {
         name: &str,
     ) -> PyResult<Var> {
         validate_objective_coefficients(&[obj])?;
-        let shared = self
-            .runtime
-            .cached_bridge("add variable")
-            .map_err(to_py_runtime_error)?;
-        let mut model = lock_bridge(shared)?;
-        let var_id = model
-            .add_variable(
-                Some(name),
-                vtype.map(|t| match t {
-                    VarType::CONTINUOUS => 'C',
-                    VarType::BINARY => 'B',
-                    VarType::INTEGER => 'I',
-                }),
-                Some(lb),
-                Some(ub),
-            )
-            .map_err(to_py_runtime_error)?;
+        let variable_type = vtype.map(|t| match t {
+            VarType::CONTINUOUS => 'C',
+            VarType::BINARY => 'B',
+            VarType::INTEGER => 'I',
+        });
+        let (var_id, result_source) = match &self.runtime {
+            ModelRuntime::Cached(cached) => {
+                let shared = cached.bridge();
+                let var_id = lock_bridge(shared)?
+                    .add_variable(Some(name), variable_type, Some(lb), Some(ub))
+                    .map_err(to_py_runtime_error)?;
+                (var_id, ResultSource::Cached(shared.clone()))
+            }
+            ModelRuntime::Direct(direct) => {
+                let var_id = direct
+                    .add_variable(Some(name), variable_type, Some(lb), Some(ub))
+                    .map_err(to_py_runtime_error)?;
+                (var_id, ResultSource::Direct(direct.clone()))
+            }
+            ModelRuntime::Poisoned(state) => {
+                return Err(to_py_runtime_error(MoiError::BackendState(format!(
+                    "model is poisoned after '{}': {}",
+                    state.operation, state.reason
+                ))));
+            }
+        };
         let mut var = Var::new(var_id.0);
-        drop(model);
-        var.set_bridge(shared);
+        match result_source {
+            ResultSource::Cached(shared) => var.set_bridge(&shared),
+            ResultSource::Direct(direct) => var.set_direct(&direct),
+        }
         Ok(var)
     }
     #[pyo3(signature = (*indices, lb=None, ub=None, obj=None, vtype=None, name=None),name="addVars")]
@@ -125,34 +168,56 @@ impl Model {
         } else {
             name_param
         };
-        let shared = self
-            .runtime
-            .cached_bridge("add variables")
-            .map_err(to_py_runtime_error)?;
-        let mut model = lock_bridge(shared)?;
-        let varids = model
-            .add_variables(
-                num_vars,
-                Some(NameType::Vector(name_param.to_vec(Some(num_vars)))),
-                Some(
-                    vtype_param
-                        .to_vec(Some(num_vars))
-                        .iter()
-                        .map(|t| match t {
-                            VarType::CONTINUOUS => 'C',
-                            VarType::BINARY => 'B',
-                            VarType::INTEGER => 'I',
-                        })
-                        .collect(),
-                ),
-                Some(BoundType::Vector(lb_param.to_vec(Some(num_vars)))),
-                Some(BoundType::Vector(ub_param.to_vec(Some(num_vars)))),
-            )
-            .map_err(to_py_runtime_error)?;
-        let var_ids = varids;
+        let names = NameType::Vector(name_param.to_vec(Some(num_vars)));
+        let variable_types = vtype_param
+            .to_vec(Some(num_vars))
+            .iter()
+            .map(|t| match t {
+                VarType::CONTINUOUS => 'C',
+                VarType::BINARY => 'B',
+                VarType::INTEGER => 'I',
+            })
+            .collect::<Vec<_>>();
+        let lower_bounds = BoundType::Vector(lb_param.to_vec(Some(num_vars)));
+        let upper_bounds = BoundType::Vector(ub_param.to_vec(Some(num_vars)));
+        let (var_ids, result_source) = match &self.runtime {
+            ModelRuntime::Cached(cached) => {
+                let shared = cached.bridge();
+                let ids = lock_bridge(shared)?
+                    .add_variables(
+                        num_vars,
+                        Some(names),
+                        Some(variable_types),
+                        Some(lower_bounds),
+                        Some(upper_bounds),
+                    )
+                    .map_err(to_py_runtime_error)?;
+                (ids, ResultSource::Cached(shared.clone()))
+            }
+            ModelRuntime::Direct(direct) => {
+                let ids = direct
+                    .add_variables(
+                        num_vars,
+                        Some(names),
+                        Some(variable_types),
+                        Some(lower_bounds),
+                        Some(upper_bounds),
+                    )
+                    .map_err(to_py_runtime_error)?;
+                (ids, ResultSource::Direct(direct.clone()))
+            }
+            ModelRuntime::Poisoned(state) => {
+                return Err(to_py_runtime_error(MoiError::BackendState(format!(
+                    "model is poisoned after '{}': {}",
+                    state.operation, state.reason
+                ))));
+            }
+        };
         let mut vars = Vars::new(shape_vec.clone(), var_ids);
-        drop(model);
-        vars.set_bridge(shared);
+        match result_source {
+            ResultSource::Cached(shared) => vars.set_bridge(&shared),
+            ResultSource::Direct(direct) => vars.set_direct(&direct),
+        }
         Ok(vars)
     }
 
@@ -160,14 +225,17 @@ impl Model {
     fn add_constr(&mut self, constr: &Bound<'_, Constr>, name: Option<&str>) -> PyResult<()> {
         let constr: Constr = constr.extract()?;
 
-        let shared = self
-            .runtime
-            .cached_bridge("add constraint")
-            .map_err(to_py_runtime_error)?;
-        let mut model = lock_bridge(shared)?;
-        model
-            .add_constraint(constr.get_f(), constr.get_s(), name.map(str::to_string))
-            .map_err(to_py_runtime_error)?;
+        match &self.runtime {
+            ModelRuntime::Cached(cached) => lock_bridge(cached.bridge())?
+                .add_constraint(constr.get_f(), constr.get_s(), name.map(str::to_string))
+                .map(|_| ())
+                .map_err(to_py_runtime_error)?,
+            ModelRuntime::Direct(direct) => direct
+                .add_constraint(constr.get_f(), constr.get_s(), name.map(str::to_string))
+                .map(|_| ())
+                .map_err(to_py_runtime_error)?,
+            ModelRuntime::Poisoned(state) => return Err(poisoned_py_error(state)),
+        }
         Ok(())
     }
     #[pyo3(signature = (generator, name=None),name="addConstrs")]
@@ -202,33 +270,37 @@ impl Model {
             name_param
         };
 
-        let shared = self
-            .runtime
-            .cached_bridge("add constraints")
-            .map_err(to_py_runtime_error)?;
-        let mut model = lock_bridge(shared)?;
-        model
-            .add_constraints(fs, ss, Some(name_param.to_vec(Some(count))))
-            .map_err(to_py_runtime_error)?;
+        let names = Some(name_param.to_vec(Some(count)));
+        match &self.runtime {
+            ModelRuntime::Cached(cached) => lock_bridge(cached.bridge())?
+                .add_constraints(fs, ss, names)
+                .map(|_| ())
+                .map_err(to_py_runtime_error)?,
+            ModelRuntime::Direct(direct) => direct
+                .add_constraints(fs, ss, names)
+                .map(|_| ())
+                .map_err(to_py_runtime_error)?,
+            ModelRuntime::Poisoned(state) => return Err(poisoned_py_error(state)),
+        }
         Ok(())
     }
     #[pyo3(signature = (expr, sense),name="setObjective")]
     fn set_objective(&mut self, expr: &Bound<'_, PyAny>, sense: Sense) -> PyResult<()> {
         let obj_expr = expr.extract::<LinExpr>()?;
-        let shared = self
-            .runtime
-            .cached_bridge("set objective")
-            .map_err(to_py_runtime_error)?;
-        let mut model = lock_bridge(shared)?;
-        model
-            .set_objective(
-                ScalarFunctionType::Affine(obj_expr.get_fn()),
-                match sense {
-                    Sense::MINIMIZE => ModelSense::Minimize,
-                    Sense::MAXIMIZE => ModelSense::Maximize,
-                },
-            )
-            .map_err(to_py_runtime_error)?;
+        let function = ScalarFunctionType::Affine(obj_expr.get_fn());
+        let sense = match sense {
+            Sense::MINIMIZE => ModelSense::Minimize,
+            Sense::MAXIMIZE => ModelSense::Maximize,
+        };
+        match &self.runtime {
+            ModelRuntime::Cached(cached) => lock_bridge(cached.bridge())?
+                .set_objective(function, sense)
+                .map_err(to_py_runtime_error)?,
+            ModelRuntime::Direct(direct) => direct
+                .set_objective(function, sense)
+                .map_err(to_py_runtime_error)?,
+            ModelRuntime::Poisoned(state) => return Err(poisoned_py_error(state)),
+        }
         Ok(())
     }
 
@@ -249,14 +321,15 @@ impl Model {
             ));
         };
 
-        let shared = self
-            .runtime
-            .cached_bridge("set parameter")
-            .map_err(to_py_runtime_error)?;
-        let mut model = lock_bridge(shared)?;
-        model
-            .set_optimizer_attr(attr, val)
-            .map_err(to_py_runtime_error)?;
+        match &self.runtime {
+            ModelRuntime::Cached(cached) => lock_bridge(cached.bridge())?
+                .set_optimizer_attr(attr, val)
+                .map_err(to_py_runtime_error)?,
+            ModelRuntime::Direct(direct) => direct
+                .set_optimizer_attr(attr, val)
+                .map_err(to_py_runtime_error)?,
+            ModelRuntime::Poisoned(state) => return Err(poisoned_py_error(state)),
+        }
         Ok(())
     }
 
@@ -264,6 +337,9 @@ impl Model {
     #[pyo3(name = "setBackend")]
     #[pyo3(signature = (backend, env=None))]
     fn set_backend(&mut self, py: Python, backend: &str, env: Option<Py<PyAny>>) -> PyResult<()> {
+        self.runtime
+            .cached("set backend")
+            .map_err(to_py_runtime_error)?;
         if backend == "copt" {
             if let Some(env_handle) = env.as_ref() {
                 if let Ok(copt_env) = env_handle.bind(py).extract::<PyRef<'_, CoptEnv>>() {
@@ -304,12 +380,25 @@ impl Model {
     }
     // 调用底层求解器进行优化
     fn optimize(&mut self, _py: Python) -> PyResult<()> {
-        let shared = self
-            .runtime
-            .cached_bridge("optimize")
-            .map_err(to_py_runtime_error)?;
-        let mut bridge = lock_bridge(shared)?;
-        bridge.optimize().map(|_| ()).map_err(to_py_runtime_error)
+        match &self.runtime {
+            ModelRuntime::Cached(cached) => lock_bridge(cached.bridge())?
+                .optimize()
+                .map(|_| ())
+                .map_err(to_py_runtime_error),
+            ModelRuntime::Direct(direct) => {
+                direct.optimize().map(|_| ()).map_err(to_py_runtime_error)
+            }
+            ModelRuntime::Poisoned(state) => Err(poisoned_py_error(state)),
+        }
+    }
+    fn update(&mut self) -> PyResult<()> {
+        match &self.runtime {
+            ModelRuntime::Cached(cached) => lock_bridge(cached.bridge())?
+                .update()
+                .map_err(to_py_runtime_error),
+            ModelRuntime::Direct(direct) => direct.update().map_err(to_py_runtime_error),
+            ModelRuntime::Poisoned(state) => Err(poisoned_py_error(state)),
+        }
     }
     fn __str__(&self) -> PyResult<String> {
         Ok(format!("Model(name={})", self.name))
@@ -317,13 +406,23 @@ impl Model {
     #[getter]
     #[pyo3(name = "ObjVal")]
     pub fn get_objval(&self) -> PyResult<Option<f64>> {
-        let shared = self
-            .runtime
-            .cached_bridge("get objective value")
-            .map_err(to_py_runtime_error)?;
-        let bridge = lock_bridge(shared)?;
-        bridge.get_objective_value().map_err(to_py_runtime_error)
+        match &self.runtime {
+            ModelRuntime::Cached(cached) => lock_bridge(cached.bridge())?
+                .get_objective_value()
+                .map_err(to_py_runtime_error),
+            ModelRuntime::Direct(direct) => {
+                direct.get_objective_value().map_err(to_py_runtime_error)
+            }
+            ModelRuntime::Poisoned(state) => Err(poisoned_py_error(state)),
+        }
     }
+}
+
+fn poisoned_py_error(state: &crate::runtime::PoisonedState) -> PyErr {
+    to_py_runtime_error(MoiError::BackendState(format!(
+        "model is poisoned after '{}': {}",
+        state.operation, state.reason
+    )))
 }
 
 fn validate_objective_coefficients(values: &[f64]) -> PyResult<()> {

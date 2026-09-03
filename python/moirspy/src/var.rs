@@ -2,14 +2,13 @@ use crate::constr::Constr;
 use crate::expr::LinExpr;
 use crate::utils::*;
 use moi_core::*;
-use moi_solver_api::*;
 use pyo3::prelude::*;
 
 #[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct Var {
     id: VarId,
-    bridge: Option<SharedBridge>,
+    result_source: Option<ResultSource>,
 }
 
 #[pyclass(from_py_object)]
@@ -17,7 +16,7 @@ pub struct Var {
 pub struct Vars {
     shape: Vec<usize>,
     var_ids: Vec<VarId>,
-    bridge: Option<SharedBridge>,
+    result_source: Option<ResultSource>,
 }
 
 impl Var {
@@ -33,15 +32,14 @@ impl Var {
         //NOTE: 用于Model当中添加变量方法，一般不会单独实例化变量
         Var {
             id: VarId(id),
-            bridge: None,
+            result_source: None,
         }
     }
     #[getter]
     #[pyo3(name = "X")]
     pub fn get_x(&self) -> PyResult<Option<f64>> {
-        if let Some(bridge) = &self.bridge {
-            let bridge = lock_bridge(bridge)?;
-            bridge.get_var_value(self.id).map_err(to_py_runtime_error)
+        if let Some(result_source) = &self.result_source {
+            result_source.get_var_value(self.id)
         } else {
             Ok(None)
         }
@@ -238,7 +236,7 @@ impl Vars {
         Ok(Vars {
             shape,
             var_ids,
-            bridge: None,
+            result_source: None,
         })
     }
     fn __getitem__(&self, idx: &Bound<'_, PyAny>) -> PyResult<Var> {
@@ -285,7 +283,7 @@ impl Vars {
         let var_id = self.var_ids[flat_index];
         Ok(Var {
             id: var_id,
-            bridge: self.bridge.clone(),
+            result_source: self.result_source.clone(),
         })
     }
     fn __str__(&self) -> String {
@@ -313,7 +311,10 @@ fn validate_shape(shape: &[usize]) -> PyResult<usize> {
 
 impl Var {
     pub fn set_bridge(&mut self, bridge: &SharedBridge) {
-        self.bridge = Some(bridge.clone());
+        self.result_source = Some(ResultSource::Cached(bridge.clone()));
+    }
+    pub fn set_direct(&mut self, model: &crate::direct::DirectModel) {
+        self.result_source = Some(ResultSource::Direct(model.clone()));
     }
 }
 
@@ -322,10 +323,13 @@ impl Vars {
         Vars {
             shape,
             var_ids: ids,
-            bridge: None,
+            result_source: None,
         }
     }
     pub fn set_bridge(&mut self, bridge: &SharedBridge) {
-        self.bridge = Some(bridge.clone());
+        self.result_source = Some(ResultSource::Cached(bridge.clone()));
+    }
+    pub fn set_direct(&mut self, model: &crate::direct::DirectModel) {
+        self.result_source = Some(ResultSource::Direct(model.clone()));
     }
 }

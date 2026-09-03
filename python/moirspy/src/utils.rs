@@ -1,9 +1,28 @@
 use moi_bridge::BridgeOptimizer;
 use moi_core::MoiError;
+use moi_core::VarId;
+use moi_solver_api::Optimizer;
 use pyo3::prelude::*;
 use std::sync::MutexGuard;
 use std::sync::{Arc, Mutex};
 pub type SharedBridge = Arc<Mutex<BridgeOptimizer>>;
+
+#[derive(Clone)]
+pub enum ResultSource {
+    Cached(SharedBridge),
+    Direct(crate::direct::DirectModel),
+}
+
+impl ResultSource {
+    pub fn get_var_value(&self, id: VarId) -> PyResult<Option<f64>> {
+        match self {
+            Self::Cached(bridge) => lock_bridge(bridge)?
+                .get_var_value(id)
+                .map_err(to_py_runtime_error),
+            Self::Direct(model) => model.get_var_value(id).map_err(to_py_runtime_error),
+        }
+    }
+}
 
 pub fn lock_bridge(bridge: &SharedBridge) -> PyResult<MutexGuard<'_, BridgeOptimizer>> {
     bridge.lock().map_err(|_| {
