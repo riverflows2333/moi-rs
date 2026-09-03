@@ -72,8 +72,12 @@ uv run python -m benchmark.direct_uc_moirspy `
 
 Available builders are:
 
-- `moirspy-early`: attach COPT before adding variables and constraints, so every
-  modeling operation is forwarded incrementally;
+- `moirspy-early`: construct the benchmark's solver-independent `LinearRow`
+  stream inside the timed region, convert each row with `dot`, and send each
+  constraint family through `addConstrs` to a Direct COPT model;
+- `moirspy-direct-api`: write the same UC formulation directly from the in-memory
+  unit/storage/section fields with normal moirspy expressions and a Direct COPT
+  model, without constructing the benchmark `LinearRow`/`VarRef` layer;
 - `moirspy-late`: build through the public API first, then attach COPT and replay
   the completed model;
 - `moirspy-copt`: low-level batched Rust/COPT binding;
@@ -84,6 +88,12 @@ Available builders are:
 - `pyoptinterface-direct`: the same complete 2-bin UC formulation is written
   directly with PyOptInterface variables, expressions, `quicksum`, and
   `add_linear_constraint`, without the benchmark's `VarRef`/`LinearRow` layer.
+
+`moirspy-direct-api` and `pyoptinterface-direct` are the representative
+application-style comparison. Both start from already parsed UC fields and
+assemble expressions during the timed build. `moirspy-early` and
+`pyoptinterface-rows` remain useful for coefficient-for-coefficient regression
+and for measuring the cost of the shared sparse-row abstraction.
 
 Install the optional comparison package into the benchmark environment with:
 

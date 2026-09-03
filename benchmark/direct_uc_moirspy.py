@@ -385,7 +385,13 @@ def build_uc_model(
     logging: int = 0,
     threads: int | None = None,
 ) -> tuple[Model, UcVariables]:
-    """Build a complete UC model directly through the public moirspy API."""
+    """Build a complete UC model directly through the public moirspy API.
+
+    ``benchmark.common.MinimalUcData`` deliberately has the same field-level
+    contract and may also be supplied by the isolated benchmark runner. This
+    function consumes UC fields directly and never creates benchmark
+    ``LinearRow`` or ``VarRef`` objects.
+    """
     model_name = f"direct-2bin-uc-{data.case_dir.name}"
     model = (
         Model(model_name, backend="copt", env=env)

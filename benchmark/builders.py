@@ -120,6 +120,19 @@ def build_moirspy_early(data: MinimalUcData, env: Any) -> Any:
     return _build_moirspy(data, env, attach_early=True)
 
 
+def build_moirspy_direct_api(data: MinimalUcData, env: Any) -> Any:
+    """Build directly from UC fields with the normal high-level modeling API.
+
+    Unlike ``build_moirspy_early``, this path does not first materialize the
+    benchmark's solver-independent ``LinearRow``/``VarRef`` representation.
+    """
+
+    from benchmark.direct_uc_moirspy import build_uc_model
+
+    model, _variables = build_uc_model(data, env, attach_early=True, logging=0)
+    return model
+
+
 def build_moirspy_late(data: MinimalUcData, env: Any) -> Any:
     return _build_moirspy(data, env, attach_early=False)
 
@@ -239,6 +252,9 @@ def build_coptpy(data: MinimalUcData, env: Any) -> Any:
 
 BUILDERS = {
     "moirspy-early": Builder("moirspy-early", prepare_moirspy, build_moirspy_early),
+    "moirspy-direct-api": Builder(
+        "moirspy-direct-api", prepare_moirspy, build_moirspy_direct_api
+    ),
     "moirspy-late": Builder("moirspy-late", prepare_moirspy, build_moirspy_late),
     "moirspy-copt": Builder("moirspy-copt", prepare_moirspy_copt, build_moirspy_copt),
     "coptpy": Builder("coptpy", prepare_coptpy, build_coptpy),
