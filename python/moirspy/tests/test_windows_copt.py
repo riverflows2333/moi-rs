@@ -45,6 +45,70 @@ class WindowsCoptModelTests(unittest.TestCase):
         self.assertAlmostEqual(model.ObjVal, 4.0, places=7)
         self.assertEqual([round(x[i].X) for i in range(3)], [1, 0, 1])
 
+    def test_direct_binary_model_matches_cached_model(self):
+        env = CoptEnv(str(COPT_DLL))
+
+        def build(direct):
+            model = (
+                Model("copt-direct-differential", backend="copt", env=env)
+                if direct
+                else Model("copt-cached-differential")
+            )
+            model.setParam("Logging", 0)
+            x = model.addVars(3, name="x", vtype=MOI.BINARY, lb=0.0, ub=1.0)
+            model.addConstrs(
+                (
+                    x[0] + 2 * x[1] + 3 * x[2] <= 4,
+                    x[0] + x[1] >= 1,
+                ),
+                name="row",
+            )
+            model.setObjective(x[0] + x[1] + 2 * x[2] + 1.0, MOI.MAXIMIZE)
+            if not direct:
+                model.setBackend("copt", env=env)
+            model.update()
+            model.optimize()
+            return model.ObjVal, [round(x[i].X) for i in range(3)]
+
+        self.assertEqual(build(True), build(False))
+
+    def test_direct_incremental_modeling_invalidates_results(self):
+        model = Model("copt-direct-incremental", backend="copt")
+        model.setParam("Logging", 0)
+        x = model.addVar(lb=0.0, ub=10.0, name="x")
+        model.addConstr(x >= 2.0)
+        model.setObjective(1.0 * x, MOI.MINIMIZE)
+        model.optimize()
+        self.assertAlmostEqual(x.X, 2.0, places=7)
+
+        model.addConstr(x >= 5.0)
+        self.assertIsNone(x.X)
+        self.assertIsNone(model.ObjVal)
+        model.optimize()
+        self.assertAlmostEqual(x.X, 5.0, places=7)
+
+    def test_direct_constructor_does_not_import_solver_plugin(self):
+        previous = sys.modules.get("moirspy_copt")
+        sys.modules["moirspy_copt"] = None
+        try:
+            model = Model("copt-direct-no-plugin", backend="copt")
+            model.setParam("Logging", 0)
+            x = model.addVar(lb=2.0, ub=2.0)
+            model.setObjective(1.0 * x, MOI.MINIMIZE)
+            model.optimize()
+            self.assertAlmostEqual(model.ObjVal, 2.0, places=7)
+            self.assertAlmostEqual(x.X, 2.0, places=7)
+        finally:
+            if previous is None:
+                sys.modules.pop("moirspy_copt", None)
+            else:
+                sys.modules["moirspy_copt"] = previous
+
+    def test_direct_model_rejects_backend_switching(self):
+        model = Model("copt-direct-switch", backend="copt")
+        with self.assertRaisesRegex(RuntimeError, "runtime is direct"):
+            model.setBackend("copt")
+
     def test_vector_bounds_are_forwarded(self):
         model = self.new_model("copt-vector-bounds")
         x = model.addVars(
