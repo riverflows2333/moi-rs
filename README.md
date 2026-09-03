@@ -17,9 +17,9 @@ select a backend, and optimize.
 
 | Package | Import name | Purpose |
 | --- | --- | --- |
-| [`moirspy`](https://pypi.org/project/moirspy/) | `moirspy` | Solver-independent modeling API |
+| [`moirspy`](https://pypi.org/project/moirspy/) | `moirspy` | Modeling API with built-in native COPT backend |
 | [`moirspy-gurobi`](https://pypi.org/project/moirspy-gurobi/) | `moirspy_gurobi` | Gurobi backend loaded through its native library |
-| `moirspy-copt` | `moirspy_copt` | COPT backend loaded through its native C library |
+| `moirspy-copt` | `moirspy_copt` | Optional low-level/compatibility COPT API |
 
 Both packages require Python 3.8 or newer. To model and solve with Gurobi,
 install both packages:
@@ -31,9 +31,9 @@ python -m pip install moirspy moirspy-gurobi
 `moirspy-gurobi` does not bundle Gurobi or a license. Install Gurobi separately
 and make sure its native library and license are available.
 
-The COPT backend is installed with `python -m pip install moirspy moirspy-copt`
-and discovers COPT through `COPT_HOME`. Neither backend bundles its solver or
-license.
+The high-level COPT backend is installed with `python -m pip install moirspy`
+and discovers COPT through `COPT_HOME`. `moirspy-copt` remains optional for its
+low-level API. Neither backend bundles its solver or license.
 
 > **Important:** `GUROBI_HOME` must be set to the Gurobi installation directory
 > before creating the Gurobi backend. Without it, `setBackend("gurobi")` may be
