@@ -50,6 +50,42 @@ impl fmt::Debug for DirectModel {
 }
 
 impl DirectModel {
+    pub fn add_linear_rows(&self, rows: moi_solver_api::LinearRows) -> Result<(), MoiError> {
+        let mut state = self.lock()?;
+        let count = rows.num_rows();
+        let start = state.num_constraints;
+        let end = start
+            .checked_add(count)
+            .ok_or_else(|| MoiError::InvalidInput("constraint count overflow".into()))?;
+        let result = Self::optimizer(&mut state)?.add_linear_rows(rows);
+        let range = Self::finish(&mut state, "add linear rows", result)?;
+        if range != (start..end) {
+            return Self::finish(
+                &mut state,
+                "add linear rows",
+                Err(MoiError::BackendProtocol(
+                    "unexpected linear row IDs".into(),
+                )),
+            );
+        }
+        state.num_constraints = end;
+        if count != 0 {
+            Self::invalidate_solution(&mut state);
+        }
+        Ok(())
+    }
+
+    pub fn set_linear_objective(
+        &self,
+        objective: moi_solver_api::LinearObjective,
+        sense: ModelSense,
+    ) -> Result<(), MoiError> {
+        let mut state = self.lock()?;
+        let result = Self::optimizer(&mut state)?.set_linear_objective(objective, sense);
+        Self::finish(&mut state, "set linear objective", result)?;
+        Self::invalidate_solution(&mut state);
+        Ok(())
+    }
     /// Metadata-only constructor retained for runtime state tests.
     pub fn new() -> Self {
         Self::from_optimizer(None)
@@ -101,7 +137,7 @@ impl DirectModel {
         if let Err(error) = &result
             && matches!(
                 error,
-                MoiError::NativeSolver { .. } | MoiError::BackendProtocol(_)
+                MoiError::NativeSolver { .. } | MoiError::BackendProtocol(_) | MoiError::Msg(_)
             )
         {
             state.poisoned = Some((operation.to_string(), error.to_string()));
@@ -357,5 +393,35 @@ impl DirectModel {
 impl Default for DirectModel {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod linear_failure_tests {
+    use super::*;
+    #[test]
+    fn diagnostic_native_error_poison_is_shared_with_result_handles() {
+        let direct = DirectModel::new();
+        let handle = direct.clone();
+        {
+            let mut state = direct.lock().unwrap();
+            // COPT returns Msg when its error API provides a diagnostic string.
+            let result: Result<(), MoiError> = Err(MoiError::Msg("native failure".into()));
+            assert!(DirectModel::finish(&mut state, "add linear rows", result).is_err());
+        }
+        assert!(
+            handle
+                .get_objective_value()
+                .unwrap_err()
+                .to_string()
+                .contains("poisoned")
+        );
+        assert!(
+            direct
+                .update()
+                .unwrap_err()
+                .to_string()
+                .contains("add linear rows")
+        );
     }
 }

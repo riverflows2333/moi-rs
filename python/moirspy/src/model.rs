@@ -223,6 +223,15 @@ impl Model {
 
     #[pyo3(signature = (constr, name=None),name="addConstr")]
     fn add_constr(&mut self, constr: &Bound<'_, Constr>, name: Option<&str>) -> PyResult<()> {
+        if let ModelRuntime::Direct(direct) = &self.runtime {
+            let mut rows = LinearRows::new(direct.num_variables());
+            constr
+                .borrow()
+                .append_to(&mut rows)
+                .map_err(to_py_runtime_error)?;
+            rows.names = name.map(|n| vec![n.to_string()]);
+            return direct.add_linear_rows(rows).map_err(to_py_runtime_error);
+        }
         let constr: Constr = constr.extract()?;
 
         match &self.runtime {
@@ -244,6 +253,21 @@ impl Model {
         generator: &Bound<'_, PyAny>,
         name: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<()> {
+        if let ModelRuntime::Direct(direct) = &self.runtime {
+            let mut rows = LinearRows::new(direct.num_variables());
+            // Do not hold the native state lock while evaluating user Python.
+            for item in generator.try_iter()? {
+                let item = item?;
+                let constr = item.extract::<PyRef<'_, Constr>>()?;
+                constr.append_to(&mut rows).map_err(to_py_runtime_error)?;
+            }
+            rows.names = match name.map(Param::<String>::from_py).transpose()? {
+                None => None,
+                Some(Param::Scalar(base)) => Some(generate_names(&base, &[rows.num_rows()])),
+                Some(Param::Vector(names)) => Some(names),
+            };
+            return direct.add_linear_rows(rows).map_err(to_py_runtime_error);
+        }
         let mut fs = Vec::new();
         let mut ss = Vec::new();
         let mut count = 0;
@@ -286,6 +310,19 @@ impl Model {
     }
     #[pyo3(signature = (expr, sense),name="setObjective")]
     fn set_objective(&mut self, expr: &Bound<'_, PyAny>, sense: Sense) -> PyResult<()> {
+        if let ModelRuntime::Direct(direct) = &self.runtime {
+            let obj_expr = expr.extract::<PyRef<'_, LinExpr>>()?;
+            let objective =
+                LinearObjective::from_affine(direct.num_variables(), obj_expr.get_fn_ref())
+                    .map_err(to_py_runtime_error)?;
+            let sense = match sense {
+                Sense::MINIMIZE => ModelSense::Minimize,
+                Sense::MAXIMIZE => ModelSense::Maximize,
+            };
+            return direct
+                .set_linear_objective(objective, sense)
+                .map_err(to_py_runtime_error);
+        }
         let obj_expr = expr.extract::<LinExpr>()?;
         let function = ScalarFunctionType::Affine(obj_expr.get_fn());
         let sense = match sense {

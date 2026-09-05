@@ -9,6 +9,9 @@ pub struct Constr {
 }
 
 impl Constr {
+    pub fn append_to(&self, rows: &mut moi_solver_api::LinearRows) -> Result<(), MoiError> {
+        rows.push(&self.f, &self.s)
+    }
     pub fn new(f: ScalarFunctionType, s: ScalarSetType) -> Self {
         Constr { f, s }
     }
