@@ -6,6 +6,70 @@ use moi_core::indices::{ConstrId, VarId};
 use moi_core::sets::ScalarSetType;
 
 pub trait ModelLike {
+    /// Compatibility fallback; native backends override this to consume buffers.
+    fn add_linear_rows(
+        &mut self,
+        rows: crate::LinearRows,
+    ) -> Result<std::ops::Range<usize>, MoiError> {
+        rows.validate()?;
+        if rows.num_rows() == 0 {
+            return match self.get_model_attr(ModelAttr::NumberOfConstraints) {
+                Some(AttrValue::Usize(count)) => Ok(count..count),
+                _ => Err(MoiError::UnsupportedAttribute),
+            };
+        }
+        let mut fs = Vec::with_capacity(rows.num_rows());
+        let mut ss = Vec::with_capacity(rows.num_rows());
+        for r in 0..rows.num_rows() {
+            let terms = (rows.row_offsets[r] as usize..rows.row_offsets[r + 1] as usize)
+                .map(|i| moi_core::AffineTerm {
+                    var: VarId(rows.col_indices[i] as usize),
+                    coeff: rows.coefficients[i],
+                })
+                .collect();
+            fs.push(ScalarFunctionType::Affine(moi_core::ScalarAffineFn {
+                terms,
+                constant: 0.0,
+            }));
+            let (l, u) = (rows.row_lower[r], rows.row_upper[r]);
+            ss.push(if l == u {
+                ScalarSetType::EqualTo(l)
+            } else if l == f64::NEG_INFINITY {
+                ScalarSetType::LessThan(u)
+            } else if u == f64::INFINITY {
+                ScalarSetType::GreaterThan(l)
+            } else {
+                ScalarSetType::Interval(l, u)
+            });
+        }
+        let count = rows.num_rows();
+        let ids = self.add_constraints(fs, ss, rows.names)?;
+        let start = ids.first().map_or(0, |id| id.0);
+        let end = start
+            .checked_add(count)
+            .ok_or_else(|| MoiError::BackendProtocol("constraint ID overflow".into()))?;
+        if ids.len() != count
+            || ids
+                .iter()
+                .zip(start..end)
+                .any(|(id, expected)| id.0 != expected)
+        {
+            return Err(MoiError::BackendProtocol(
+                "noncontiguous linear row IDs".into(),
+            ));
+        }
+        Ok(start..end)
+    }
+
+    fn set_linear_objective(
+        &mut self,
+        objective: crate::LinearObjective,
+        sense: ModelSense,
+    ) -> Result<(), MoiError> {
+        objective.validate()?;
+        self.set_objective(objective.into_function(), sense)
+    }
+
     fn add_variable(
         &mut self,
         name: Option<&str>,
