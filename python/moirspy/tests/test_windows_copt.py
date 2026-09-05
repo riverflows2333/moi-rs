@@ -109,6 +109,30 @@ class WindowsCoptModelTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "runtime is direct"):
             model.setBackend("copt")
 
+    def test_direct_batch_validation_is_atomic(self):
+        from moirspy import Var
+        model = Model("direct-batch-validation", backend="copt")
+        model.setParam("Logging", 0)
+        x = model.addVar(ub=10)
+        model.setObjective(1.0 * x, MOI.MINIMIZE)
+        model.optimize()
+        def interrupted():
+            yield x >= 8
+            raise ValueError("generator interrupted")
+        for batch, names in ((interrupted(), None), ([x >= 8, Var(99) >= 0], None), ([x >= 8], ["a", "b"])):
+            with self.assertRaises(ValueError):
+                model.addConstrs(batch, name=names)
+            self.assertAlmostEqual(x.X, 0)
+        model.addConstrs([])
+        model.addConstrs([x + 3 >= 5, x <= 9])
+        self.assertIsNone(x.X)
+        model.optimize()
+        self.assertAlmostEqual(x.X, 2)
+        model.setObjective(-1.0*x + 4, MOI.MINIMIZE)
+        self.assertIsNone(model.ObjVal)
+        model.optimize()
+        self.assertAlmostEqual(model.ObjVal, -5)
+
     def test_vector_bounds_are_forwarded(self):
         model = self.new_model("copt-vector-bounds")
         x = model.addVars(
