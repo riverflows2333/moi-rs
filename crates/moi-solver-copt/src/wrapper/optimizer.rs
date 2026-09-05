@@ -132,6 +132,103 @@ impl CoptOptimizer {
 }
 
 impl ModelLike for CoptOptimizer {
+    fn add_linear_rows(
+        &mut self,
+        mut rows: LinearRows,
+    ) -> Result<std::ops::Range<usize>, MoiError> {
+        rows.validate()?;
+        if rows.num_cols != self.num_vars {
+            return Err(MoiError::InvalidInput(
+                "linear row column count does not match model".into(),
+            ));
+        }
+        let n = rows.num_rows();
+        let end = self
+            .num_constrs
+            .checked_add(n)
+            .ok_or_else(|| MoiError::InvalidInput("constraint count overflow".into()))?;
+        checked_c_int(end, "total row count")?;
+        let names = CStringArray::new(rows.names.take().unwrap_or_default(), "constraint name")?;
+        let counts: Vec<c_int> = rows.row_offsets.windows(2).map(|w| w[1] - w[0]).collect();
+        for v in rows.row_lower.iter_mut().chain(&mut rows.row_upper) {
+            *v = normalize_bound(*v);
+        }
+        if n != 0 {
+            self.check(
+                unsafe {
+                    (self.api.COPT_AddRows)(
+                        self.prob,
+                        checked_c_int(n, "row count")?,
+                        rows.row_offsets.as_ptr(),
+                        counts.as_ptr(),
+                        ptr_or_null(&rows.col_indices),
+                        ptr_or_null(&rows.coefficients),
+                        ptr::null(),
+                        rows.row_lower.as_ptr(),
+                        rows.row_upper.as_ptr(),
+                        names.as_ptr(),
+                    )
+                },
+                "COPT_AddRows",
+            )?;
+            self.invalidate_solution();
+        }
+        let range = self.num_constrs..end;
+        self.num_constrs = end;
+        Ok(range)
+    }
+
+    fn set_linear_objective(
+        &mut self,
+        objective: LinearObjective,
+        sense: ModelSense,
+    ) -> Result<(), MoiError> {
+        objective.validate()?;
+        if objective.num_cols != self.num_vars {
+            return Err(MoiError::InvalidInput(
+                "objective column count does not match model".into(),
+            ));
+        }
+        // Reset all columns so replacement objectives cannot leave stale costs.
+        let mut coefficients = vec![0.0; self.num_vars];
+        for (&i, &v) in objective.col_indices.iter().zip(&objective.coefficients) {
+            coefficients[i as usize] += v;
+            ensure_finite(coefficients[i as usize], "summed objective coefficient")?;
+        }
+        let count = checked_c_int(self.num_vars, "objective columns")?;
+        let indices: Vec<c_int> = (0..count).collect();
+        if count != 0 {
+            self.check(
+                unsafe {
+                    (self.api.COPT_SetColObj)(
+                        self.prob,
+                        count,
+                        indices.as_ptr(),
+                        coefficients.as_ptr(),
+                    )
+                },
+                "COPT_SetColObj",
+            )?;
+        }
+        self.check(
+            unsafe { (self.api.COPT_SetObjConst)(self.prob, objective.constant) },
+            "COPT_SetObjConst",
+        )?;
+        let native_sense = match sense {
+            ModelSense::Minimize => bindings::COPT_MINIMIZE as c_int,
+            ModelSense::Maximize => bindings::COPT_MAXIMIZE as c_int,
+        };
+        self.check(
+            unsafe { (self.api.COPT_SetObjSense)(self.prob, native_sense) },
+            "COPT_SetObjSense",
+        )?;
+        // Preserve the public objective attribute contract for Rust callers.
+        self.objective = Some(objective.into_function());
+        self.sense = Some(sense);
+        self.invalidate_solution();
+        Ok(())
+    }
+
     fn add_variables(
         &mut self,
         n: usize,
@@ -523,4 +620,82 @@ fn delete_prob(api: &CoptApi, prob: &mut *mut c_void) {
     // before its shared environment can be released.
     let _ = unsafe { (api.COPT_DeleteProb)(prob) };
     *prob = ptr::null_mut();
+}
+
+#[cfg(test)]
+mod linear_batch_tests {
+    use super::*;
+
+    #[test]
+    fn native_rows_counts_solve_and_objective_replacement() {
+        let Some(path) = crate::find_library() else {
+            return;
+        };
+        let api = Arc::new(CoptApi::new(path).unwrap());
+        let env = Arc::new(std::sync::Mutex::new(crate::CoptEnv::new(api).unwrap()));
+        let mut model = CoptOptimizer::new(env).unwrap();
+        model
+            .set_optimizer_attr(OptimizerAttr::Silent, AttrValue::Bool(true))
+            .unwrap();
+        model
+            .add_variables(2, None, None, None, Some(BoundType::Single(10.0)))
+            .unwrap();
+        let mut rows = LinearRows::new(2);
+        rows.push(
+            &ScalarFunctionType::Variable(VarId(0)),
+            &ScalarSetType::Interval(2.0, 4.0),
+        )
+        .unwrap();
+        rows.push(
+            &ScalarFunctionType::Affine(ScalarAffineFn::default()),
+            &ScalarSetType::EqualTo(0.0),
+        )
+        .unwrap();
+        assert_eq!(model.add_linear_rows(rows).unwrap(), 0..2);
+        assert_eq!(model.add_linear_rows(LinearRows::new(2)).unwrap(), 2..2);
+        model.update().unwrap();
+        assert_eq!(
+            model
+                .get_int_attr(bindings::COPT_INTATTR_ROWS, "rows")
+                .unwrap(),
+            2
+        );
+        assert_eq!(
+            model
+                .get_int_attr(bindings::COPT_INTATTR_COLS, "cols")
+                .unwrap(),
+            2
+        );
+        assert_eq!(
+            model
+                .get_int_attr(bindings::COPT_INTATTR_ELEMS, "elems")
+                .unwrap(),
+            1
+        );
+        let objective = LinearObjective {
+            num_cols: 2,
+            col_indices: vec![0, 0, 1],
+            coefficients: vec![0.5, 0.5, -2.0],
+            constant: 3.0,
+        };
+        model
+            .set_linear_objective(objective, ModelSense::Minimize)
+            .unwrap();
+        model.optimize().unwrap();
+        assert_eq!(model.get_objective_value().unwrap(), Some(-15.0));
+        model
+            .set_linear_objective(
+                LinearObjective {
+                    num_cols: 2,
+                    col_indices: vec![0],
+                    coefficients: vec![1.0],
+                    constant: 0.0,
+                },
+                ModelSense::Maximize,
+            )
+            .unwrap();
+        assert_eq!(model.get_objective_value().unwrap(), None);
+        model.optimize().unwrap();
+        assert_eq!(model.get_objective_value().unwrap(), Some(4.0));
+    }
 }

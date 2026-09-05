@@ -10,6 +10,51 @@ use std::sync::{Arc, Mutex};
 
 type TestEnv = Arc<Mutex<CoptEnv>>;
 
+#[test]
+fn native_linear_batches_match_lp_and_milp_reference_optima() {
+    let Some(env) = configured_environment() else {
+        return;
+    };
+    let mut random_state = 0xd4_u64;
+    for kind in ['C', 'B'] {
+        for _ in 0..10 {
+            let profits: Vec<_> = (0..6).map(|_| next_value(&mut random_state, 10)).collect();
+            let weights: Vec<_> = (0..6).map(|_| next_value(&mut random_state, 8)).collect();
+            let capacity = weights.iter().sum::<f64>() * 0.55;
+            let expected = if kind == 'B' {
+                brute_force_knapsack(&profits, &weights, capacity)
+            } else {
+                fractional_knapsack(&profits, &weights, capacity)
+            };
+            let mut model = configured_optimizer(&env).unwrap();
+            model
+                .add_variables(
+                    6,
+                    None,
+                    Some(vec![kind; 6]),
+                    None,
+                    Some(BoundType::Single(1.0)),
+                )
+                .unwrap();
+            let mut rows = moi_solver_api::LinearRows::new(6);
+            rows.push(&affine(&weights), &ScalarSetType::LessThan(capacity))
+                .unwrap();
+            model.add_linear_rows(rows).unwrap();
+            let ScalarFunctionType::Affine(f) = affine(&profits) else {
+                unreachable!()
+            };
+            model
+                .set_linear_objective(
+                    moi_solver_api::LinearObjective::from_affine(6, &f).unwrap(),
+                    ModelSense::Maximize,
+                )
+                .unwrap();
+            assert_eq!(model.optimize().unwrap(), SolveStatus::Optimal);
+            assert!((model.get_objective_value().unwrap().unwrap() - expected).abs() < 1e-7);
+        }
+    }
+}
+
 fn configured_environment() -> Option<TestEnv> {
     let path = find_library()?;
     let api = Arc::new(CoptApi::new(path).ok()?);
