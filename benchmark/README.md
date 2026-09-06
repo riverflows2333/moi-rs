@@ -78,6 +78,9 @@ Available builders are:
 - `moirspy-direct-api`: write the same UC formulation directly from the in-memory
   unit/storage/section fields with normal moirspy expressions and a Direct COPT
   model, without constructing the benchmark `LinearRow`/`VarRef` layer;
+- `moirspy-direct-nonames`: use the same Direct API formulation while passing
+  `name=None` for every variable and constraint, measuring the recommended
+  production path when generated solver names are unnecessary;
 - `moirspy-late`: build through the public API first, then attach COPT and replay
   the completed model;
 - `moirspy-copt`: low-level batched Rust/COPT binding;
@@ -89,9 +92,10 @@ Available builders are:
   directly with PyOptInterface variables, expressions, `quicksum`, and
   `add_linear_constraint`, without the benchmark's `VarRef`/`LinearRow` layer.
 
-`moirspy-direct-api` and `pyoptinterface-direct` are the representative
-application-style comparison. Both start from already parsed UC fields and
-assemble expressions during the timed build. `moirspy-early` and
+`moirspy-direct-nonames` and `pyoptinterface-direct` are the representative
+names-off application-style comparison. `moirspy-direct-api` retains explicit
+names to quantify their allocation cost. All three start from already parsed UC
+fields and assemble expressions during the timed build. `moirspy-early` and
 `pyoptinterface-rows` remain useful for coefficient-for-coefficient regression
 and for measuring the cost of the shared sparse-row abstraction.
 

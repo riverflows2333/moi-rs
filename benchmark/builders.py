@@ -137,6 +137,13 @@ def build_moirspy_late(data: MinimalUcData, env: Any) -> Any:
     return _build_moirspy(data, env, attach_early=False)
 
 
+def build_moirspy_direct_nonames(data: MinimalUcData, env: Any) -> Any:
+    from benchmark.direct_uc_moirspy import build_uc_model
+
+    model, _variables = build_uc_model(data, env, names=False)
+    return model
+
+
 def profile_moirspy(
     data: MinimalUcData, env: Any, *, attach_early: bool = False
 ) -> tuple[Any, dict[str, float]]:
@@ -251,6 +258,9 @@ def build_coptpy(data: MinimalUcData, env: Any) -> Any:
 
 
 BUILDERS = {
+    "moirspy-direct-nonames": Builder(
+        "moirspy-direct-nonames", prepare_moirspy, build_moirspy_direct_nonames
+    ),
     "moirspy-early": Builder("moirspy-early", prepare_moirspy, build_moirspy_early),
     "moirspy-direct-api": Builder(
         "moirspy-direct-api", prepare_moirspy, build_moirspy_direct_api

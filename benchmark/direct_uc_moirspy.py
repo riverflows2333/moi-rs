@@ -58,6 +58,7 @@ def _add_thermal_constraints(
     model: Model,
     data: UcData,
     variables: ThermalVariables,
+    *, names: bool = True,
 ) -> None:
     p, x, u = variables.p, variables.x, variables.u
     cost_p, cost_u = variables.cost_p, variables.cost_u
@@ -75,19 +76,19 @@ def _add_thermal_constraints(
         if hold:
             model.addConstrs(
                 (x[g, t] == unit.initial_on for t in range(min(hold, periods))),
-                name=f"thermal_hold_{g}",
+                name=(f"thermal_hold_{g}" if names else None),
             )
 
         model.addConstr(
             x[g, 0] - u[g, 0] <= unit.initial_on,
-            name=f"thermal_transition_initial_{g}",
+            name=(f"thermal_transition_initial_{g}" if names else None),
         )
         model.addConstrs(
             (
                 x[g, t] - x[g, t - 1] <= u[g, t]
                 for t in range(1, periods)
             ),
-            name=f"thermal_transition_{g}",
+            name=(f"thermal_transition_{g}" if names else None),
         )
 
         model.addConstrs(
@@ -99,7 +100,7 @@ def _add_thermal_constraints(
                 <= x[g, t]
                 for t in range(periods)
             ),
-            name=f"thermal_minimum_on_{g}",
+            name=(f"thermal_minimum_on_{g}" if names else None),
         )
         for t in range(periods):
             start = max(0, t - minimum_off + 1)
@@ -111,16 +112,16 @@ def _add_thermal_constraints(
             )
             model.addConstr(
                 starts <= rhs,
-                name=f"thermal_minimum_off_{g}_{t}",
+                name=(f"thermal_minimum_off_{g}_{t}" if names else None),
             )
 
         model.addConstrs(
             (p[g, t] <= unit.p_max * x[g, t] for t in range(periods)),
-            name=f"thermal_output_max_{g}",
+            name=(f"thermal_output_max_{g}" if names else None),
         )
         model.addConstrs(
             (p[g, t] >= unit.p_min * x[g, t] for t in range(periods)),
-            name=f"thermal_output_min_{g}",
+            name=(f"thermal_output_min_{g}" if names else None),
         )
 
         if unit.p_max - unit.p_min > min(unit.ramp_up, unit.ramp_down):
@@ -131,12 +132,12 @@ def _add_thermal_constraints(
                 <= unit.initial_output
                 + ramp_up * unit.initial_on
                 + unit.p_max * (1 - unit.initial_on),
-                name=f"thermal_ramp_up_initial_{g}",
+                name=(f"thermal_ramp_up_initial_{g}" if names else None),
             )
             model.addConstr(
                 unit.initial_output - p[g, 0]
                 <= ramp_down * x[g, 0] + unit.p_max * (1 - x[g, 0]),
-                name=f"thermal_ramp_down_initial_{g}",
+                name=(f"thermal_ramp_down_initial_{g}" if names else None),
             )
             model.addConstrs(
                 (
@@ -145,7 +146,7 @@ def _add_thermal_constraints(
                     + unit.p_max * (1 - x[g, t - 1])
                     for t in range(1, periods)
                 ),
-                name=f"thermal_ramp_up_{g}",
+                name=(f"thermal_ramp_up_{g}" if names else None),
             )
             model.addConstrs(
                 (
@@ -154,7 +155,7 @@ def _add_thermal_constraints(
                     + unit.p_max * (1 - x[g, t])
                     for t in range(1, periods)
                 ),
-                name=f"thermal_ramp_down_{g}",
+                name=(f"thermal_ramp_down_{g}" if names else None),
             )
 
         model.addConstrs(
@@ -164,14 +165,14 @@ def _add_thermal_constraints(
                 for t in range(periods)
                 for slope, intercept in unit.cost_lines
             ),
-            name=f"thermal_running_cost_{g}",
+            name=(f"thermal_running_cost_{g}" if names else None),
         )
         model.addConstrs(
             (
                 cost_u[g, t] == unit.startup_cost * u[g, t]
                 for t in range(periods)
             ),
-            name=f"thermal_startup_cost_{g}",
+            name=(f"thermal_startup_cost_{g}" if names else None),
         )
 
 
@@ -181,7 +182,7 @@ def _add_minimum_state_constraints(
     entity: int,
     minimum: int,
     periods: int,
-    name: str,
+    name: str | None,
 ) -> None:
     if minimum < 2:
         return
@@ -200,6 +201,7 @@ def _add_storage_constraints(
     model: Model,
     data: UcData,
     variables: StorageVariables,
+    *, names: bool = True,
 ) -> None:
     op, ip = variables.op, variables.ip
     o, i, soc = variables.o, variables.i, variables.soc
@@ -214,31 +216,31 @@ def _add_storage_constraints(
                 op[e, t] >= storage.minimum_discharge_power * o[e, t]
                 for t in range(periods)
             ),
-            name=f"storage_output_min_{e}",
+            name=(f"storage_output_min_{e}" if names else None),
         )
         model.addConstrs(
             (
                 op[e, t] <= storage.maximum_discharge * o[e, t]
                 for t in range(periods)
             ),
-            name=f"storage_output_max_{e}",
+            name=(f"storage_output_max_{e}" if names else None),
         )
         model.addConstrs(
             (ip[e, t] == storage.charge_power * i[e, t] for t in range(periods)),
-            name=f"storage_charge_output_{e}",
+            name=(f"storage_charge_output_{e}" if names else None),
         )
 
         model.addConstrs(
             (o[e, t] + i[e, t] <= 1 for t in range(periods)),
-            name=f"storage_mutual_exclusion_{e}",
+            name=(f"storage_mutual_exclusion_{e}" if names else None),
         )
         model.addConstrs(
             (o[e, t] + i[e, t + 1] <= 1 for t in range(periods - 1)),
-            name=f"storage_no_discharge_to_charge_{e}",
+            name=(f"storage_no_discharge_to_charge_{e}" if names else None),
         )
         model.addConstrs(
             (i[e, t] + o[e, t + 1] <= 1 for t in range(periods - 1)),
-            name=f"storage_no_charge_to_discharge_{e}",
+            name=(f"storage_no_charge_to_discharge_{e}" if names else None),
         )
 
         model.addConstrs(
@@ -249,12 +251,12 @@ def _add_storage_constraints(
                 * quicksum(ip[e, tau] - op[e, tau] for tau in range(t + 1))
                 for t in range(periods)
             ),
-            name=f"storage_energy_{e}",
+            name=(f"storage_energy_{e}" if names else None),
         )
         model.addConstr(
             soc[e, periods - 1]
             >= storage.final_energy / storage.maximum_energy,
-            name=f"storage_terminal_energy_{e}",
+            name=(f"storage_terminal_energy_{e}" if names else None),
         )
 
         minimum_discharge = max(
@@ -267,12 +269,12 @@ def _add_storage_constraints(
                 o[e, t] for t in range(min(minimum_discharge, periods))
             )
             >= minimum_discharge * o[e, 0],
-            name=f"storage_initial_discharge_{e}",
+            name=(f"storage_initial_discharge_{e}" if names else None),
         )
         model.addConstr(
             quicksum(i[e, t] for t in range(min(minimum_charge, periods)))
             >= minimum_charge * i[e, 0],
-            name=f"storage_initial_charge_{e}",
+            name=(f"storage_initial_charge_{e}" if names else None),
         )
         _add_minimum_state_constraints(
             model,
@@ -280,7 +282,7 @@ def _add_storage_constraints(
             e,
             minimum_discharge,
             periods,
-            f"storage_minimum_discharge_{e}",
+            (f"storage_minimum_discharge_{e}" if names else None),
         )
         _add_minimum_state_constraints(
             model,
@@ -288,7 +290,7 @@ def _add_storage_constraints(
             e,
             minimum_charge,
             periods,
-            f"storage_minimum_charge_{e}",
+            (f"storage_minimum_charge_{e}" if names else None),
         )
         if storage.minimum_off >= 2:
             model.addConstrs(
@@ -307,7 +309,7 @@ def _add_storage_constraints(
                     for t in range(1, periods)
                     for length in (min(minimum_off, periods - t),)
                 ),
-                name=f"storage_minimum_off_{e}",
+                name=(f"storage_minimum_off_{e}" if names else None),
             )
 
         model.addConstrs(
@@ -317,14 +319,14 @@ def _add_storage_constraints(
                 for t in range(periods)
                 for slope, intercept in storage.discharge_cost_lines
             ),
-            name=f"storage_discharge_cost_{e}",
+            name=(f"storage_discharge_cost_{e}" if names else None),
         )
         model.addConstrs(
             (
                 cost_i[e, t] == delta * storage.charge_cost * i[e, t]
                 for t in range(periods)
             ),
-            name=f"storage_charge_cost_{e}",
+            name=(f"storage_charge_cost_{e}" if names else None),
         )
 
 
@@ -333,6 +335,7 @@ def _add_system_constraints(
     data: UcData,
     thermal: ThermalVariables,
     storage: StorageVariables | None,
+    *, names: bool = True,
 ) -> None:
     periods = data.num_periods
 
@@ -349,11 +352,11 @@ def _add_system_constraints(
                 )
             model.addConstr(
                 flow <= section.limit + section.load_offset[t],
-                name=f"section_upper_{section.section_id}_{t}",
+                name=(f"section_upper_{section.section_id}_{t}" if names else None),
             )
             model.addConstr(
                 flow >= -section.limit + section.load_offset[t],
-                name=f"section_lower_{section.section_id}_{t}",
+                name=(f"section_lower_{section.section_id}_{t}" if names else None),
             )
 
     for t, load in enumerate(data.loads):
@@ -365,7 +368,7 @@ def _add_system_constraints(
                 storage.op[e, t] - storage.ip[e, t]
                 for e in range(data.num_storages)
             )
-        model.addConstr(total_output == load, name=f"balance_{t}")
+        model.addConstr(total_output == load, name=(f"balance_{t}" if names else None))
 
         reserve = quicksum(
             unit.p_max * thermal.x[g, t] - thermal.p[g, t]
@@ -373,7 +376,7 @@ def _add_system_constraints(
         )
         model.addConstr(
             reserve >= data.reserve_ratio * load,
-            name=f"reserve_{t}",
+            name=(f"reserve_{t}" if names else None),
         )
 
 
@@ -382,6 +385,7 @@ def build_uc_model(
     env: CoptEnv,
     *,
     attach_early: bool = True,
+    names: bool = True,
     logging: int = 0,
     threads: int | None = None,
 ) -> tuple[Model, UcVariables]:
@@ -403,14 +407,14 @@ def build_uc_model(
         model.setParam("Threads", threads)
 
     thermal = ThermalVariables(
-        p=model.addVars(data.num_units, data.num_periods, lb=0.0, name="thermal_p"),
+        p=model.addVars(data.num_units, data.num_periods, lb=0.0, name=("thermal_p" if names else None)),
         x=model.addVars(
             data.num_units,
             data.num_periods,
             lb=0.0,
             ub=1.0,
             vtype=MOI.BINARY,
-            name="thermal_x",
+            name=("thermal_x" if names else None),
         ),
         u=model.addVars(
             data.num_units,
@@ -418,13 +422,13 @@ def build_uc_model(
             lb=0.0,
             ub=1.0,
             vtype=MOI.BINARY,
-            name="thermal_u",
+            name=("thermal_u" if names else None),
         ),
         cost_p=model.addVars(
-            data.num_units, data.num_periods, lb=0.0, name="thermal_cost_p"
+            data.num_units, data.num_periods, lb=0.0, name=("thermal_cost_p" if names else None)
         ),
         cost_u=model.addVars(
-            data.num_units, data.num_periods, lb=0.0, name="thermal_cost_u"
+            data.num_units, data.num_periods, lb=0.0, name=("thermal_cost_u" if names else None)
         ),
     )
 
@@ -432,10 +436,10 @@ def build_uc_model(
     if data.num_storages:
         storage = StorageVariables(
             op=model.addVars(
-                data.num_storages, data.num_periods, lb=0.0, name="storage_op"
+                data.num_storages, data.num_periods, lb=0.0, name=("storage_op" if names else None)
             ),
             ip=model.addVars(
-                data.num_storages, data.num_periods, lb=0.0, name="storage_ip"
+                data.num_storages, data.num_periods, lb=0.0, name=("storage_ip" if names else None)
             ),
             o=model.addVars(
                 data.num_storages,
@@ -443,7 +447,7 @@ def build_uc_model(
                 lb=0.0,
                 ub=1.0,
                 vtype=MOI.BINARY,
-                name="storage_o",
+                name=("storage_o" if names else None),
             ),
             i=model.addVars(
                 data.num_storages,
@@ -451,33 +455,33 @@ def build_uc_model(
                 lb=0.0,
                 ub=1.0,
                 vtype=MOI.BINARY,
-                name="storage_i",
+                name=("storage_i" if names else None),
             ),
             soc=model.addVars(
                 data.num_storages,
                 data.num_periods,
                 lb=0.0,
                 ub=1.0,
-                name="storage_soc",
+                name=("storage_soc" if names else None),
             ),
             cost_o=model.addVars(
                 data.num_storages,
                 data.num_periods,
                 lb=0.0,
-                name="storage_cost_o",
+                name=("storage_cost_o" if names else None),
             ),
             cost_i=model.addVars(
                 data.num_storages,
                 data.num_periods,
                 lb=0.0,
-                name="storage_cost_i",
+                name=("storage_cost_i" if names else None),
             ),
         )
 
-    _add_thermal_constraints(model, data, thermal)
+    _add_thermal_constraints(model, data, thermal, names=names)
     if storage is not None:
-        _add_storage_constraints(model, data, storage)
-    _add_system_constraints(model, data, thermal, storage)
+        _add_storage_constraints(model, data, storage, names=names)
+    _add_system_constraints(model, data, thermal, storage, names=names)
 
     objective = quicksum(
         thermal.cost_p[g, t] + thermal.cost_u[g, t]
@@ -510,6 +514,7 @@ def main() -> int:
         help="attach COPT before modeling or replay the completed model afterwards",
     )
     parser.add_argument("--solve", action="store_true")
+    parser.add_argument("--no-names", action="store_true", help="omit variable and constraint names")
     parser.add_argument("--logging", type=int, choices=(0, 1), default=0)
     parser.add_argument("--threads", type=int)
     parser.add_argument(
@@ -531,6 +536,7 @@ def main() -> int:
         attach_early=args.attach == "early",
         logging=args.logging,
         threads=args.threads,
+        names=not args.no_names,
     )
     model_seconds = perf_counter() - started
 

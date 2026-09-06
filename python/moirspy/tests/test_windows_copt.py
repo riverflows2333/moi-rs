@@ -109,6 +109,23 @@ class WindowsCoptModelTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "runtime is direct"):
             model.setBackend("copt")
 
+    def test_named_and_unnamed_direct_models_and_handle_lifetime(self):
+        import gc
+        for name in (None, "x", "", ["x0", "x1", "x2", "x3"]):
+            with self.subTest(name=name):
+                model = Model("names", backend="copt")
+                model.setParam("Logging", 0)
+                fixed = model.addVar(lb=1, ub=1, name=None)
+                x = model.addVars(2, 2, ub=1, vtype=MOI.BINARY, name=name)
+                model.addConstrs([x[0, 0] + x[1, 1] <= 1], name=None)
+                model.setObjective(1.0 * fixed + x[0, 0] + 2*x[1, 1], MOI.MAXIMIZE)
+                model.optimize()
+                self.assertAlmostEqual(model.ObjVal, 3)
+                del model
+                gc.collect()
+                self.assertAlmostEqual(fixed.X, 1)
+                self.assertAlmostEqual(x[1, 1].X, 1)
+
     def test_direct_batch_validation_is_atomic(self):
         from moirspy import Var
         model = Model("direct-batch-validation", backend="copt")
