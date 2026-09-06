@@ -103,7 +103,7 @@ pub(crate) fn build_copt_rows(
     let mut value = Vec::new();
     let mut lower = Vec::with_capacity(n);
     let mut upper = Vec::with_capacity(n);
-    let mut row_names = Vec::with_capacity(n);
+    let mut row_names = Vec::with_capacity(if names.is_some() { n } else { 0 });
 
     for (offset, (function, set)) in functions.iter().zip(sets).enumerate() {
         let linear = scalar_function_to_linear(function)?;
@@ -153,11 +153,9 @@ pub(crate) fn build_copt_rows(
         }
         lower.push(normalize_bound(row_lower));
         upper.push(normalize_bound(row_upper));
-        row_names.push(
-            names
-                .map(|values| values[offset].clone())
-                .unwrap_or_else(|| format!("c{}", start_index + offset)),
-        );
+        if let Some(names) = names {
+            row_names.push(names[offset].clone());
+        }
     }
 
     Ok(CoptRows {
@@ -268,6 +266,7 @@ mod tests {
         assert_eq!(rows.value, vec![2.0]);
         assert_eq!(rows.lower, vec![1.0]);
         assert_eq!(rows.upper, vec![5.0]);
+        assert!(rows.names.as_ptr().is_null());
     }
 
     #[test]

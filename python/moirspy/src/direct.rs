@@ -366,12 +366,11 @@ impl DirectModel {
     }
 
     fn validate_ids(
-        ids: impl Iterator<Item = usize>,
+        ids: impl ExactSizeIterator<Item = usize>,
         start: usize,
         expected_len: usize,
         kind: &str,
     ) -> Result<(), MoiError> {
-        let ids = ids.collect::<Vec<_>>();
         if ids.len() != expected_len {
             return Err(MoiError::BackendProtocol(format!(
                 "backend returned {} {kind} IDs, expected {expected_len}",

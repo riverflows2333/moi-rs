@@ -1,4 +1,6 @@
-use crate::backends::copt::{CoptEnv, create_optimizer as create_copt_optimizer};
+use crate::backends::copt::{
+    CoptEnv, create_direct_optimizer, create_optimizer as create_copt_optimizer,
+};
 use crate::constr::Constr;
 use crate::direct::DirectModel;
 use crate::expr::LinExpr;
@@ -42,9 +44,9 @@ impl Model {
                                     "Model(..., backend='copt', env=...) requires moirspy.CoptEnv",
                                 )
                             })?;
-                        create_copt_optimizer(Some(&copt_env))?
+                        create_direct_optimizer(Some(&copt_env))?
                     }
-                    None => create_copt_optimizer(None)?,
+                    None => create_direct_optimizer(None)?,
                 };
                 ModelRuntime::Direct(DirectModel::with_optimizer(optimizer))
             }
@@ -57,14 +59,14 @@ impl Model {
         Ok(Model { name, runtime })
     }
 
-    #[pyo3(signature = (lb=0., ub=f64::INFINITY, obj=0.0, vtype=None, name=""),name="addVar")]
+    #[pyo3(signature = (lb=0., ub=f64::INFINITY, obj=0.0, vtype=None, name=None),name="addVar")]
     fn add_var(
         &mut self,
         lb: f64,
         ub: f64,
         obj: f64,
         vtype: Option<VarType>,
-        name: &str,
+        name: Option<&str>,
     ) -> PyResult<Var> {
         validate_objective_coefficients(&[obj])?;
         let variable_type = vtype.map(|t| match t {
@@ -76,13 +78,13 @@ impl Model {
             ModelRuntime::Cached(cached) => {
                 let shared = cached.bridge();
                 let var_id = lock_bridge(shared)?
-                    .add_variable(Some(name), variable_type, Some(lb), Some(ub))
+                    .add_variable(name, variable_type, Some(lb), Some(ub))
                     .map_err(to_py_runtime_error)?;
                 (var_id, ResultSource::Cached(shared.clone()))
             }
             ModelRuntime::Direct(direct) => {
                 let var_id = direct
-                    .add_variable(Some(name), variable_type, Some(lb), Some(ub))
+                    .add_variable(name, variable_type, Some(lb), Some(ub))
                     .map_err(to_py_runtime_error)?;
                 (var_id, ResultSource::Direct(direct.clone()))
             }
@@ -157,18 +159,15 @@ impl Model {
             .map(Param::from_py)
             .transpose()?
             .unwrap_or(Param::Vector(vec![VarType::CONTINUOUS; num_vars]));
-        let name_param = name
-            .map(Param::from_py)
-            .transpose()?
-            .unwrap_or(Param::Scalar("".to_string()));
-        // 如果传入参数为单一字符串，则按照shape生成a[0],a[1]或a[0,0],a[0,1]等变量名称
-        let name_param = if let Param::Scalar(s) = &name_param {
-            let names = generate_names(s, &shape_vec);
-            Param::Vector(names)
-        } else {
-            name_param
+        let names = match name.map(Param::<String>::from_py).transpose()? {
+            Some(Param::Scalar(base)) => Some(NameType::Vector(generate_names(&base, &shape_vec))),
+            Some(Param::Vector(names)) => Some(NameType::Vector(names)),
+            None if matches!(self.runtime, ModelRuntime::Cached(_)) => {
+                // Keep the existing replayable-model naming convention.
+                Some(NameType::Vector(generate_names("", &shape_vec)))
+            }
+            None => None,
         };
-        let names = NameType::Vector(name_param.to_vec(Some(num_vars)));
         let variable_types = vtype_param
             .to_vec(Some(num_vars))
             .iter()
@@ -186,7 +185,7 @@ impl Model {
                 let ids = lock_bridge(shared)?
                     .add_variables(
                         num_vars,
-                        Some(names),
+                        names,
                         Some(variable_types),
                         Some(lower_bounds),
                         Some(upper_bounds),
@@ -198,7 +197,7 @@ impl Model {
                 let ids = direct
                     .add_variables(
                         num_vars,
-                        Some(names),
+                        names,
                         Some(variable_types),
                         Some(lower_bounds),
                         Some(upper_bounds),

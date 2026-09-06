@@ -15,8 +15,56 @@ pub struct Var {
 #[derive(Clone)]
 pub struct Vars {
     shape: Vec<usize>,
-    var_ids: Vec<VarId>,
+    var_ids: VariableIds,
     result_source: Option<ResultSource>,
+}
+
+/// Model-created IDs are contiguous. Explicit user-created Vars may be sparse.
+#[derive(Clone)]
+enum VariableIds {
+    Range { start: usize, len: usize },
+    Explicit(Vec<VarId>),
+}
+
+impl From<Vec<VarId>> for VariableIds {
+    fn from(ids: Vec<VarId>) -> Self {
+        let start = ids.first().map_or(0, |id| id.0);
+        if ids
+            .iter()
+            .enumerate()
+            .all(|(i, id)| start.checked_add(i) == Some(id.0))
+        {
+            Self::Range {
+                start,
+                len: ids.len(),
+            }
+        } else {
+            Self::Explicit(ids)
+        }
+    }
+}
+
+impl VariableIds {
+    fn len(&self) -> usize {
+        match self {
+            Self::Range { len, .. } => *len,
+            Self::Explicit(ids) => ids.len(),
+        }
+    }
+    fn get(&self, index: usize) -> VarId {
+        match self {
+            Self::Range { start, .. } => VarId(start + index),
+            Self::Explicit(ids) => ids[index],
+        }
+    }
+}
+
+impl std::fmt::Debug for VariableIds {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_list()
+            .entries((0..self.len()).map(|i| self.get(i)))
+            .finish()
+    }
 }
 
 impl Var {
@@ -235,7 +283,7 @@ impl Vars {
         let var_ids: Vec<VarId> = ids.into_iter().map(VarId).collect();
         Ok(Vars {
             shape,
-            var_ids,
+            var_ids: var_ids.into(),
             result_source: None,
         })
     }
@@ -280,7 +328,7 @@ impl Vars {
                 "Flat index out of bounds",
             ));
         }
-        let var_id = self.var_ids[flat_index];
+        let var_id = self.var_ids.get(flat_index);
         Ok(Var {
             id: var_id,
             result_source: self.result_source.clone(),
@@ -322,7 +370,7 @@ impl Vars {
     pub fn new(shape: Vec<usize>, ids: Vec<VarId>) -> Self {
         Vars {
             shape,
-            var_ids: ids,
+            var_ids: ids.into(),
             result_source: None,
         }
     }
@@ -331,5 +379,21 @@ impl Vars {
     }
     pub fn set_direct(&mut self, model: &crate::direct::DirectModel) {
         self.result_source = Some(ResultSource::Direct(model.clone()));
+    }
+}
+
+#[cfg(test)]
+mod compact_ids_tests {
+    use super::*;
+    #[test]
+    fn contiguous_ids_use_constant_storage_and_sparse_ids_are_preserved() {
+        let ids = VariableIds::from((17..100_017).map(VarId).collect::<Vec<_>>());
+        assert!(matches!(ids, VariableIds::Range { .. }));
+        assert_eq!(ids.get(99_999), VarId(100_016));
+        let sparse = VariableIds::from(vec![VarId(9), VarId(3), VarId(9)]);
+        assert!(matches!(sparse, VariableIds::Explicit(_)));
+        assert_eq!(sparse.clone().get(1), VarId(3));
+        let extreme = VariableIds::from(vec![VarId(usize::MAX), VarId(0)]);
+        assert!(matches!(extreme, VariableIds::Explicit(_)));
     }
 }
