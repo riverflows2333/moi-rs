@@ -93,9 +93,11 @@ release. The bridge synchronizes existing model data when a backend is attached.
 Available variable types are `MOI.CONTINUOUS`, `MOI.BINARY`, and `MOI.INTEGER`.
 In COPT Direct mode, `addConstrs` collects a validated sparse row batch and
 submits it once after the generator completes. A generator or input-validation
-error submits no rows. `name=None` omits native constraint names; explicit names
-still work. Variable naming is unchanged. Native failures poison a Direct model,
-which must then be rebuilt.
+error submits no rows. `name=None` on `addVar`, `addVars`, `addConstr`, or
+`addConstrs` omits native names and their per-item string allocations; explicit
+names still work. Direct variable collections retain contiguous IDs as a compact
+range, and objective expressions are submitted without retaining a replay copy.
+Native failures poison a Direct model, which must then be rebuilt.
 
 Quadratic and nonlinear products are not supported yet. The `obj` argument on
 variable creation is currently reserved; define the objective with

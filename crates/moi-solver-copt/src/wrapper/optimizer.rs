@@ -17,6 +17,7 @@ pub struct CoptOptimizer {
     num_vars: usize,
     num_constrs: usize,
     objective: Option<ScalarFunctionType>,
+    retain_objective: bool,
     sense: Option<ModelSense>,
     cached_status: Option<SolveStatus>,
     cached_solution: Option<Vec<f64>>,
@@ -55,6 +56,7 @@ impl CoptOptimizer {
             num_vars: 0,
             num_constrs: 0,
             objective: None,
+            retain_objective: true,
             sense: None,
             cached_status: None,
             cached_solution: None,
@@ -64,6 +66,13 @@ impl CoptOptimizer {
 
     pub fn num_variables(&self) -> usize {
         self.num_vars
+    }
+
+    /// Direct frontends query results, not a replayable objective expression.
+    /// ObjectiveFunction returns None in this mode; solution getters are unchanged.
+    pub fn discard_objective_storage(&mut self) {
+        self.retain_objective = false;
+        self.objective = None;
     }
 
     pub fn num_constraints(&self) -> usize {
@@ -223,7 +232,7 @@ impl ModelLike for CoptOptimizer {
             "COPT_SetObjSense",
         )?;
         // Preserve the public objective attribute contract for Rust callers.
-        self.objective = Some(objective.into_function());
+        self.objective = self.retain_objective.then(|| objective.into_function());
         self.sense = Some(sense);
         self.invalidate_solution();
         Ok(())
@@ -272,7 +281,7 @@ impl ModelLike for CoptOptimizer {
                 ensure_len(values.len(), n, "variable names")?;
                 values
             }
-            None => (self.num_vars..end).map(|i| format!("x{i}")).collect(),
+            None => Vec::new(),
         };
         let names = CStringArray::new(names, "variable name")?;
 
@@ -400,7 +409,7 @@ impl ModelLike for CoptOptimizer {
             "COPT_SetObjSense",
         )?;
 
-        self.objective = Some(function);
+        self.objective = self.retain_objective.then_some(function);
         self.sense = Some(sense);
         self.invalidate_solution();
         Ok(())
@@ -697,5 +706,21 @@ mod linear_batch_tests {
         assert_eq!(model.get_objective_value().unwrap(), None);
         model.optimize().unwrap();
         assert_eq!(model.get_objective_value().unwrap(), Some(4.0));
+        model.discard_objective_storage();
+        assert!(model.objective.is_none());
+        model
+            .set_linear_objective(
+                LinearObjective {
+                    num_cols: 2,
+                    col_indices: vec![0],
+                    coefficients: vec![1.0],
+                    constant: 7.0,
+                },
+                ModelSense::Minimize,
+            )
+            .unwrap();
+        assert!(model.objective.is_none());
+        model.optimize().unwrap();
+        assert_eq!(model.get_objective_value().unwrap(), Some(9.0));
     }
 }

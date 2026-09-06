@@ -100,7 +100,7 @@ class Model:
         ub: float = ...,
         obj: float = ...,
         vtype: Optional[_VarType] = ...,
-        name: str = ...,
+        name: Optional[str] = ...,
     ) -> Var: ...
     def addVars(
         self,

@@ -101,14 +101,23 @@ impl CoptEnv {
 }
 
 pub fn create_optimizer(env: Option<&CoptEnv>) -> PyResult<Box<dyn Optimizer + Send>> {
+    Ok(Box::new(native_optimizer(env)?))
+}
+
+pub fn create_direct_optimizer(env: Option<&CoptEnv>) -> PyResult<Box<dyn Optimizer + Send>> {
+    let mut optimizer = native_optimizer(env)?;
+    optimizer.discard_objective_storage();
+    Ok(Box::new(optimizer))
+}
+
+fn native_optimizer(env: Option<&CoptEnv>) -> PyResult<CoptOptimizer> {
     let env = match env {
         Some(env) => env.inner.clone(),
         None => Arc::new(Mutex::new(
             NativeCoptEnv::new(load_api(None)?).map_err(to_py_runtime_error)?,
         )),
     };
-    let optimizer = CoptOptimizer::new(env).map_err(to_py_runtime_error)?;
-    Ok(Box::new(optimizer))
+    CoptOptimizer::new(env).map_err(to_py_runtime_error)
 }
 
 fn load_api(dll_path: Option<String>) -> PyResult<Arc<CoptApi>> {
