@@ -26,22 +26,42 @@ impl CachedModel {
         &self.bridge
     }
 
-    pub fn attach_python_backend(&mut self, model_instance: Bound<'_, PyAny>) -> PyResult<()> {
+    pub fn ensure_backend_attachable(&self) -> PyResult<()> {
+        lock_bridge(&self.bridge)?
+            .ensure_backend_attachable()
+            .map_err(to_py_runtime_error)
+    }
+
+    pub fn attach_python_backend(
+        &mut self,
+        model_instance: Bound<'_, PyAny>,
+        keep_cache: bool,
+    ) -> PyResult<()> {
         let py_backend = Box::new(PyBackend::new(model_instance.clone().into()));
         let mut bridge = lock_bridge(&self.bridge)?;
         bridge
             .attach_backend(py_backend)
             .map_err(to_py_runtime_error)?;
+        if !keep_cache {
+            bridge.release_model_cache().map_err(to_py_runtime_error)?;
+        }
         drop(bridge);
         self._backend = Some(model_instance.into());
         Ok(())
     }
 
-    pub fn attach_native_backend(&mut self, backend: Box<dyn Optimizer + Send>) -> PyResult<()> {
+    pub fn attach_native_backend(
+        &mut self,
+        backend: Box<dyn Optimizer + Send>,
+        keep_cache: bool,
+    ) -> PyResult<()> {
         let mut bridge = lock_bridge(&self.bridge)?;
         bridge
             .attach_backend(backend)
             .map_err(to_py_runtime_error)?;
+        if !keep_cache {
+            bridge.release_model_cache().map_err(to_py_runtime_error)?;
+        }
         drop(bridge);
         self._backend = None;
         Ok(())

@@ -371,11 +371,19 @@ impl Model {
 
     // 选择求解器后端
     #[pyo3(name = "setBackend")]
-    #[pyo3(signature = (backend, env=None))]
-    fn set_backend(&mut self, py: Python, backend: &str, env: Option<Py<PyAny>>) -> PyResult<()> {
-        self.runtime
+    #[pyo3(signature = (backend, env=None, *, keep_cache=false))]
+    fn set_backend(
+        &mut self,
+        py: Python,
+        backend: &str,
+        env: Option<Py<PyAny>>,
+        keep_cache: bool,
+    ) -> PyResult<()> {
+        let cached = self
+            .runtime
             .cached("set backend")
             .map_err(to_py_runtime_error)?;
+        cached.ensure_backend_attachable()?;
         if backend == "copt" {
             if let Some(env_handle) = env.as_ref() {
                 if let Ok(copt_env) = env_handle.bind(py).extract::<PyRef<'_, CoptEnv>>() {
@@ -384,7 +392,7 @@ impl Model {
                         .runtime
                         .cached_mut("set backend")
                         .map_err(to_py_runtime_error)?
-                        .attach_native_backend(optimizer);
+                        .attach_native_backend(optimizer, keep_cache);
                 }
             } else {
                 let optimizer = create_copt_optimizer(None)?;
@@ -392,7 +400,7 @@ impl Model {
                     .runtime
                     .cached_mut("set backend")
                     .map_err(to_py_runtime_error)?
-                    .attach_native_backend(optimizer);
+                    .attach_native_backend(optimizer, keep_cache);
             }
         }
 
@@ -412,7 +420,7 @@ impl Model {
         self.runtime
             .cached_mut("set backend")
             .map_err(to_py_runtime_error)?
-            .attach_python_backend(model_instance)
+            .attach_python_backend(model_instance, keep_cache)
     }
     // 调用底层求解器进行优化
     fn optimize(&mut self, _py: Python) -> PyResult<()> {
