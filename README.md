@@ -18,10 +18,10 @@ select a backend, and optimize.
 | Package | Import name | Purpose |
 | --- | --- | --- |
 | [`moirspy`](https://pypi.org/project/moirspy/) | `moirspy` | Modeling API with built-in native COPT backend |
-| [`moirspy-gurobi`](https://pypi.org/project/moirspy-gurobi/) | `moirspy_gurobi` | Gurobi backend loaded through its native library |
+| [`moirspy-gurobi`](https://pypi.org/project/moirspy-gurobi/) | `moirspy_gurobi` | Low-level Gurobi API and current high-level compatibility transport |
 | `moirspy-copt` | `moirspy_copt` | Optional low-level/compatibility COPT API |
 
-Both packages require Python 3.8 or newer. To model and solve with Gurobi,
+The packages require Python 3.8 or newer. To model and solve with Gurobi,
 install both packages:
 
 ```bash
@@ -100,6 +100,13 @@ This path sends model operations directly to the Rust COPT optimizer and does
 not retain the replayable variable/constraint cache. The default
 `Model(name)` plus `setBackend(...)` workflow remains available when the model
 must be built before choosing a solver.
+
+Both COPT workflows are native inside the main `moirspy` extension and make no
+calls through a Python solver object. The package-based Python transport remains
+behind the default `legacy-python-backend` Cargo feature for Gurobi and external
+backends during one compatibility cycle. The separate `moirspy_copt` and
+`moirspy_gurobi` packages continue to expose their low-level APIs; no import path
+is removed in this release.
 
 ## Modeling API
 

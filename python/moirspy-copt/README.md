@@ -1,13 +1,15 @@
 # moirspy-copt
 
-`moirspy-copt` is the native COPT backend for the
-[`moirspy`](https://pypi.org/project/moirspy/) optimization-modeling package.
-It supports linear and mixed-integer linear models through the COPT 8.0 C API.
+`moirspy-copt` is the optional low-level and compatibility COPT package for
+[`moirspy`](https://pypi.org/project/moirspy/). It supports linear and
+mixed-integer linear models through the COPT 8.0 C API. Current `moirspy`
+releases already include the native high-level COPT backend, so this package is
+only needed for the `moirspy_copt` low-level import path.
 
 ## Installation
 
 ```bash
-python -m pip install moirspy moirspy-copt
+python -m pip install moirspy-copt
 ```
 
 This package does not bundle COPT or a license. Install COPT separately and set
@@ -20,7 +22,7 @@ export COPT_HOME=/opt/copt80
 The low-level constructor also accepts an installation root or exact native
 library through `dll_path`.
 
-## Use with moirspy
+## Built-in high-level API
 
 ```python
 from moirspy import MOI, Model
@@ -38,7 +40,8 @@ print([x[i].X for i in range(2)])
 ```
 
 Existing model data and parameters are synchronized at `setBackend("copt")`;
-later changes are forwarded incrementally.
+later changes are forwarded incrementally. This workflow is implemented inside
+`moirspy` and does not import or call `moirspy_copt.Model`.
 
 ## Explicit environments
 

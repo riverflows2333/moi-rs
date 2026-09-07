@@ -9,11 +9,11 @@ pluggable solver backends.
 
 ## Installation
 
-Install the modeling package and the optional Gurobi backend:
+Install the modeling package, plus the optional Gurobi compatibility backend
+when Gurobi is needed:
 
 ```bash
 python -m pip install moirspy moirspy-gurobi
-python -m pip install moirspy
 ```
 
 Solver backends require the corresponding native solver installation and
@@ -68,6 +68,21 @@ The COPT backend is built into `moirspy` and calls the native Rust optimizer
 without importing `moirspy_copt`. The separate package remains available as a
 low-level compatibility API. Gurobi still uses its backend package in this
 release. The bridge synchronizes existing model data when a backend is attached.
+
+## Backend execution modes
+
+| Mode | Construction | Model storage | Python backend transport |
+| --- | --- | --- | --- |
+| COPT Direct | `Model(name, backend="copt")` | Minimal counts and native state | None |
+| COPT Cached attach | `Model(name)` then `setBackend("copt")` | Released after attach unless `keep_cache=True` | None |
+| Legacy package | `setBackend("gurobi")` or a third-party backend | Controlled by `keep_cache` | Compatibility `PyBackend` |
+
+The legacy transport is compiled by the `legacy-python-backend` Cargo feature
+for one compatibility cycle. It is enabled in published wheels while Gurobi and
+third-party packages still depend on it. Source builds that only require native
+COPT can use `--no-default-features`; unknown/package backends then fail with an
+explicit error. `moirspy_copt.Model` and `moirspy_gurobi.Model` remain supported
+as low-level APIs and are not required by the built-in COPT path.
 
 ## Main API
 

@@ -3,7 +3,9 @@
 `moirspy-gurobi` is the native Gurobi backend for the
 [`moirspy`](https://pypi.org/project/moirspy/) optimization-modeling package.
 The extension is implemented in Rust and loads the Gurobi native library at
-runtime.
+runtime. Its low-level API remains stable for the current compatibility cycle;
+the high-level `setBackend("gurobi")` path currently reaches it through
+moirspy's feature-gated legacy Python transport until native integration lands.
 
 > The project is under active development and its API is not yet stable.
 
