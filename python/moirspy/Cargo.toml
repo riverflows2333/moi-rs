@@ -9,6 +9,12 @@ authors.workspace = true
 name = "moirspy"
 crate-type = ["cdylib"]
 
+[features]
+default = ["legacy-python-backend"]
+# Compatibility transport for third-party `moirspy_<name>.Model` packages.
+# Built-in native backends do not use this feature at runtime.
+legacy-python-backend = []
+
 [dependencies]
 pyo3.workspace = true
 moi-core.workspace = true

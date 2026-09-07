@@ -404,23 +404,34 @@ impl Model {
             }
         }
 
-        let model_instance = py
-            .import(format!("moirspy_{backend}"))
-            .and_then(|module| module.getattr("Model"))
-            .and_then(|model_class| match env {
-                Some(env) => model_class.call1((Some(self.name.to_string()), None::<String>, env)),
-                None => model_class.call1((Some(self.name.to_string()), None::<String>)),
-            })
-            .map_err(|error| {
-                PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
-                    "Failed to initialize backend '{backend}': {error}"
-                ))
-            })?;
+        #[cfg(feature = "legacy-python-backend")]
+        {
+            let model_instance = py
+                .import(format!("moirspy_{backend}"))
+                .and_then(|module| module.getattr("Model"))
+                .and_then(|model_class| match env {
+                    Some(env) => {
+                        model_class.call1((Some(self.name.to_string()), None::<String>, env))
+                    }
+                    None => model_class.call1((Some(self.name.to_string()), None::<String>)),
+                })
+                .map_err(|error| {
+                    PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+                        "Failed to initialize legacy Python backend '{backend}': {error}"
+                    ))
+                })?;
 
-        self.runtime
-            .cached_mut("set backend")
-            .map_err(to_py_runtime_error)?
-            .attach_python_backend(model_instance, keep_cache)
+            return self
+                .runtime
+                .cached_mut("set backend")
+                .map_err(to_py_runtime_error)?
+                .attach_legacy_python_backend(model_instance, keep_cache);
+        }
+
+        #[cfg(not(feature = "legacy-python-backend"))]
+        Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+            "backend '{backend}' is not built into moirspy and legacy Python backends are disabled"
+        )))
     }
     // 调用底层求解器进行优化
     fn optimize(&mut self, _py: Python) -> PyResult<()> {

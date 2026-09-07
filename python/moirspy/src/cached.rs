@@ -1,16 +1,19 @@
+#[cfg(feature = "legacy-python-backend")]
 use crate::py_backend::PyBackend;
 use crate::utils::{SharedBridge, lock_bridge, to_py_runtime_error};
 use moi_bridge::BridgeOptimizer;
 use moi_solver_api::Optimizer;
 use pyo3::prelude::*;
+#[cfg(feature = "legacy-python-backend")]
 use pyo3::types::PyAny;
 use std::sync::{Arc, Mutex};
 
 /// Existing replayable model storage used by the public API during D1.
 pub struct CachedModel {
     bridge: SharedBridge,
-    // The backend is also owned by PyBackend. Keeping the Python handle here
-    // preserves the pre-runtime lifetime behavior until the legacy path is removed.
+    #[cfg(feature = "legacy-python-backend")]
+    // PyBackend owns the same object. This second handle preserves the legacy
+    // package lifetime contract for one compatibility cycle.
     _backend: Option<Py<PyAny>>,
 }
 
@@ -18,6 +21,7 @@ impl CachedModel {
     pub fn new() -> Self {
         Self {
             bridge: Arc::new(Mutex::new(BridgeOptimizer::new())),
+            #[cfg(feature = "legacy-python-backend")]
             _backend: None,
         }
     }
@@ -32,7 +36,8 @@ impl CachedModel {
             .map_err(to_py_runtime_error)
     }
 
-    pub fn attach_python_backend(
+    #[cfg(feature = "legacy-python-backend")]
+    pub fn attach_legacy_python_backend(
         &mut self,
         model_instance: Bound<'_, PyAny>,
         keep_cache: bool,
@@ -63,7 +68,10 @@ impl CachedModel {
             bridge.release_model_cache().map_err(to_py_runtime_error)?;
         }
         drop(bridge);
-        self._backend = None;
+        #[cfg(feature = "legacy-python-backend")]
+        {
+            self._backend = None;
+        }
         Ok(())
     }
 }

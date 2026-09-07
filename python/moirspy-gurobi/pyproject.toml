@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "moirspy-gurobi"
-description = "The native Gurobi backend for moirspy"
+description = "Low-level Gurobi bindings and compatibility backend for moirspy"
 readme = "README.md"
 requires-python = ">=3.8"
 classifiers = [

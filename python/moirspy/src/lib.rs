@@ -7,7 +7,8 @@ pub mod expr;
 pub mod function;
 pub mod model;
 pub mod moi;
-pub mod py_backend;
+#[cfg(feature = "legacy-python-backend")]
+mod py_backend;
 pub mod runtime;
 pub mod utils;
 pub mod var;
