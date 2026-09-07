@@ -79,13 +79,16 @@ release. The bridge synchronizes existing model data when a backend is attached.
 - `dot(coefficients, variables)` constructs a weighted affine expression directly.
 - `Model.setObjective(expr, MOI.MINIMIZE | MOI.MAXIMIZE)` sets the objective.
 - `Model.setParam(name, value)` stores a solver parameter.
-- `Model.setBackend("gurobi", env=None)` or `Model.setBackend("copt", env=None)`
+- `Model.setBackend("gurobi", env=None, keep_cache=False)` or the COPT equivalent
   attaches the installed backend and optionally forwards an explicit solver
-  environment.
+  environment. By default, replay-only model data is released after a successful
+  attach. Pass `keep_cache=True` when the model must later be copied to another
+  backend.
 - `Model(name, backend="copt", env=None)` creates a native Direct model. Its
   variables, constraints, objective, and parameters go straight to COPT without
   retaining a replayable model cache. Use the default constructor followed by
-  `setBackend` when late solver selection or replay is required.
+  `setBackend` when late solver selection is required; opt into `keep_cache=True`
+  when repeated backend switching is required.
 - `CoptEnv(...)` and `CoptEnvConfig(...)` configure the built-in native COPT
   backend, including explicit library, license-directory, client, and OEM setup.
 - `Model.optimize()` solves the model; use `Model.ObjVal` and `Var.X` for results.

@@ -26,6 +26,9 @@ pub struct BridgeOptimizer {
     pub backend: Option<Box<dyn Optimizer + Send>>,
     pub raw_params: HashMap<OptimizerAttr, AttrValue>,
     termination_status: Option<SolveStatus>,
+    num_variables: usize,
+    num_constraints: usize,
+    cache_retained: bool,
 }
 
 impl BridgeOptimizer {
@@ -39,6 +42,9 @@ impl BridgeOptimizer {
             backend: None,
             raw_params: HashMap::new(),
             termination_status: None,
+            num_variables: 0,
+            num_constraints: 0,
+            cache_retained: true,
         }
     }
 
@@ -47,11 +53,7 @@ impl BridgeOptimizer {
         &mut self,
         mut backend: Box<dyn Optimizer + Send>,
     ) -> Result<(), MoiError> {
-        if self.backend.is_some() {
-            return Err(MoiError::BackendState(
-                "a backend is already attached".to_string(),
-            ));
-        }
+        self.ensure_backend_attachable()?;
 
         // 1. 同步变量
         if !self.vars.is_empty() {
@@ -110,11 +112,42 @@ impl BridgeOptimizer {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.vars.is_empty() && self.constrs.is_empty()
+        self.num_variables == 0 && self.num_constraints == 0
     }
 
     pub fn get_var_name_by_id(&self, id: VarId) -> Option<String> {
-        self.vars.get(id.0).map(|var| var.name.clone())
+        self.cache_retained
+            .then(|| self.vars.get(id.0).map(|var| var.name.clone()))
+            .flatten()
+    }
+
+    /// Drop replay-only model data after a backend has been populated.
+    pub fn release_model_cache(&mut self) -> Result<(), MoiError> {
+        if self.backend.is_none() {
+            return Err(MoiError::BackendState(
+                "cannot release model cache before a backend is attached".into(),
+            ));
+        }
+        self.vars = Vec::new();
+        self.constrs = HashMap::new();
+        self.obj = None;
+        self.raw_params = HashMap::new();
+        self.cache_retained = false;
+        Ok(())
+    }
+
+    pub fn cache_retained(&self) -> bool {
+        self.cache_retained
+    }
+
+    pub fn ensure_backend_attachable(&self) -> Result<(), MoiError> {
+        if self.backend.is_some() && !self.cache_retained {
+            Err(MoiError::BackendState(
+                "backend switching is unavailable after the model cache was released".into(),
+            ))
+        } else {
+            Ok(())
+        }
     }
 
     fn invalidate_solution(&mut self) {
@@ -161,7 +194,7 @@ impl BridgeOptimizer {
     fn validate_function(&self, function: &ScalarFunctionType) -> Result<(), MoiError> {
         match function {
             ScalarFunctionType::Variable(variable) => {
-                if variable.0 >= self.vars.len() {
+                if variable.0 >= self.num_variables {
                     return Err(MoiError::InvalidVariableIndex(variable.0));
                 }
             }
@@ -172,7 +205,7 @@ impl BridgeOptimizer {
                     ));
                 }
                 for term in &function.terms {
-                    if term.var.0 >= self.vars.len() {
+                    if term.var.0 >= self.num_variables {
                         return Err(MoiError::InvalidVariableIndex(term.var.0));
                     }
                     if !term.coeff.is_finite() {
@@ -240,7 +273,7 @@ impl ModelLike for BridgeOptimizer {
         lb: Option<BoundType>,
         ub: Option<BoundType>,
     ) -> Result<Vec<VarId>, MoiError> {
-        let start_id = self.vars.len();
+        let start_id = self.num_variables;
         let end_id = start_id
             .checked_add(n)
             .ok_or_else(|| MoiError::InvalidInput("variable count overflow".into()))?;
@@ -323,14 +356,17 @@ impl ModelLike for BridgeOptimizer {
             }
         }
 
-        self.vars.extend((0..n).map(|i| VarInfo {
-            col_index: start_id + i,
-            lb: lbs[i],
-            ub: ubs[i],
-            vtype: vtypes[i],
-            name: names[i].clone(),
-            value: None,
-        }));
+        if self.cache_retained {
+            self.vars.extend((0..n).map(|i| VarInfo {
+                col_index: start_id + i,
+                lb: lbs[i],
+                ub: ubs[i],
+                vtype: vtypes[i],
+                name: names[i].clone(),
+                value: None,
+            }));
+        }
+        self.num_variables = end_id;
         self.invalidate_solution();
         Ok(ids)
     }
@@ -357,7 +393,7 @@ impl ModelLike for BridgeOptimizer {
             Self::validate_set(set)?;
         }
 
-        let start_id = self.constrs.len();
+        let start_id = self.num_constraints;
         let end_id = start_id
             .checked_add(fs.len())
             .ok_or_else(|| MoiError::InvalidInput("constraint count overflow".into()))?;
@@ -377,18 +413,21 @@ impl ModelLike for BridgeOptimizer {
             }
         }
 
-        for (offset, ((f, s), name)) in fs.into_iter().zip(ss).zip(names).enumerate() {
-            let id = ConstrId(start_id + offset);
-            self.constrs.insert(
-                id,
-                ConstrInfo {
-                    row_index: id.0,
-                    name,
-                    f,
-                    s,
-                },
-            );
+        if self.cache_retained {
+            for (offset, ((f, s), name)) in fs.into_iter().zip(ss).zip(names).enumerate() {
+                let id = ConstrId(start_id + offset);
+                self.constrs.insert(
+                    id,
+                    ConstrInfo {
+                        row_index: id.0,
+                        name,
+                        f,
+                        s,
+                    },
+                );
+            }
         }
+        self.num_constraints = end_id;
         self.invalidate_solution();
         Ok(ids)
     }
@@ -402,7 +441,9 @@ impl ModelLike for BridgeOptimizer {
                 return Err(error);
             }
         }
-        self.obj = Some(f);
+        if self.cache_retained {
+            self.obj = Some(f);
+        }
         self.sense = Some(sense);
         self.invalidate_solution();
         Ok(())
@@ -423,10 +464,10 @@ impl ModelLike for BridgeOptimizer {
         match attr {
             ModelAttr::ObjectiveSense => self.sense.map(AttrValue::ModelSense),
             ModelAttr::ObjectiveFunction => self.obj.clone().map(AttrValue::ScalarFn),
-            ModelAttr::NumberOfVariables => Some(AttrValue::Usize(self.vars.len())),
-            ModelAttr::NumberOfConstraints => Some(AttrValue::Usize(self.constrs.len())),
+            ModelAttr::NumberOfVariables => Some(AttrValue::Usize(self.num_variables)),
+            ModelAttr::NumberOfConstraints => Some(AttrValue::Usize(self.num_constraints)),
             ModelAttr::ListOfVariableIndices => {
-                Some(AttrValue::VecUsize((0..self.vars.len()).collect()))
+                Some(AttrValue::VecUsize((0..self.num_variables).collect()))
             }
             ModelAttr::TerminationStatus => self.termination_status.map(AttrValue::Status),
             ModelAttr::ResultCount => Some(AttrValue::Usize(usize::from(
@@ -512,7 +553,9 @@ impl ModelLike for BridgeOptimizer {
             self.detach_failed_backend();
             return Err(error);
         }
-        self.raw_params.insert(attr, value);
+        if self.cache_retained {
+            self.raw_params.insert(attr, value);
+        }
         self.invalidate_solution();
         Ok(())
     }
@@ -540,7 +583,7 @@ impl Optimizer for BridgeOptimizer {
     }
 
     fn get_var_value(&self, var_id: VarId) -> Result<Option<f64>, MoiError> {
-        if var_id.0 >= self.vars.len() {
+        if var_id.0 >= self.num_variables {
             return Err(MoiError::InvalidVariableIndex(var_id.0));
         }
         if self.status != BridgeState::Solved {
