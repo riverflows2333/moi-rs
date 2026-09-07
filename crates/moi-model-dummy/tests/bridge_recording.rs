@@ -189,3 +189,104 @@ fn objective_and_parameter_failures_do_not_update_bridge_cache() {
     );
     assert!(bridge.backend.is_none());
 }
+
+#[test]
+fn released_cache_keeps_counts_results_and_incremental_ids() {
+    let (backend, handle) = DummyModel::new();
+    let mut bridge = BridgeOptimizer::new();
+    let x = bridge
+        .add_variable(Some("x"), Some('C'), Some(0.0), Some(10.0))
+        .unwrap();
+    bridge
+        .add_constraint(
+            ScalarFunctionType::Variable(x),
+            ScalarSetType::GreaterThan(1.0),
+            Some("minimum".into()),
+        )
+        .unwrap();
+    handle
+        .set_solution(SolveStatus::Optimal, Some(1.0), [(x, 1.0)])
+        .unwrap();
+
+    bridge.attach_backend(Box::new(backend)).unwrap();
+    bridge.release_model_cache().unwrap();
+
+    assert!(!bridge.cache_retained());
+    assert!(bridge.vars.is_empty());
+    assert!(bridge.constrs.is_empty());
+    assert_eq!(bridge.obj, None);
+    assert_eq!(
+        bridge.get_model_attr(ModelAttr::NumberOfVariables),
+        Some(AttrValue::Usize(1))
+    );
+    assert_eq!(
+        bridge.get_model_attr(ModelAttr::NumberOfConstraints),
+        Some(AttrValue::Usize(1))
+    );
+    assert_eq!(bridge.optimize().unwrap(), SolveStatus::Optimal);
+    assert_eq!(bridge.get_var_value(x).unwrap(), Some(1.0));
+
+    let y = bridge.add_variable(None, None, None, None).unwrap();
+    assert_eq!(y.0, 1);
+    assert!(bridge.vars.is_empty());
+    assert_eq!(
+        bridge.get_model_attr(ModelAttr::NumberOfVariables),
+        Some(AttrValue::Usize(2))
+    );
+    let (replacement, _) = DummyModel::new();
+    let error = bridge.attach_backend(Box::new(replacement)).unwrap_err();
+    assert!(error.to_string().contains("cache was released"));
+}
+
+#[test]
+fn retained_cache_can_replay_into_a_replacement_backend() {
+    let (first, _) = DummyModel::new();
+    let (second, second_handle) = DummyModel::new();
+    let mut bridge = BridgeOptimizer::new();
+    let x = bridge.add_variable(Some("x"), None, None, None).unwrap();
+    bridge
+        .add_constraint(
+            ScalarFunctionType::Variable(x),
+            ScalarSetType::LessThan(3.0),
+            Some("upper".into()),
+        )
+        .unwrap();
+
+    bridge.attach_backend(Box::new(first)).unwrap();
+    bridge.attach_backend(Box::new(second)).unwrap();
+
+    let state = second_handle.snapshot().unwrap();
+    assert_eq!(state.variables.len(), 1);
+    assert_eq!(state.constraints.len(), 1);
+    assert!(bridge.cache_retained());
+}
+
+#[test]
+fn failed_replacement_preserves_cache_and_current_backend() {
+    let (first, first_handle) = DummyModel::new();
+    let (failing, failing_handle) = DummyModel::new();
+    let mut bridge = BridgeOptimizer::new();
+    let x = bridge.add_variable(None, None, None, None).unwrap();
+    bridge
+        .add_constraint(
+            ScalarFunctionType::Variable(x),
+            ScalarSetType::LessThan(3.0),
+            None,
+        )
+        .unwrap();
+    bridge.attach_backend(Box::new(first)).unwrap();
+    failing_handle
+        .fail_next(RecordedOperation::AddConstraints, "replacement failure")
+        .unwrap();
+
+    let error = bridge.attach_backend(Box::new(failing)).unwrap_err();
+    assert!(error.to_string().contains("replacement failure"));
+    assert!(bridge.cache_retained());
+    assert_eq!(bridge.vars.len(), 1);
+    assert_eq!(bridge.constrs.len(), 1);
+
+    first_handle
+        .set_solution(SolveStatus::Optimal, Some(0.0), [(x, 0.0)])
+        .unwrap();
+    assert_eq!(bridge.optimize().unwrap(), SolveStatus::Optimal);
+}

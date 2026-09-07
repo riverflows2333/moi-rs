@@ -82,7 +82,10 @@ print("x:", [x[i].X for i in range(3)])
 
 `setBackend("gurobi")` dynamically imports `moirspy_gurobi`. Existing model
 data is synchronized when the backend is attached, and subsequent variables,
-constraints, objectives, and parameters are forwarded incrementally.
+constraints, objectives, and parameters are forwarded incrementally. A successful
+attach releases replay-only data by default; use
+`setBackend("gurobi", keep_cache=True)` only when the model must later be replayed
+into a different backend.
 
 For COPT models whose solver is known up front, construct a native Direct model:
 

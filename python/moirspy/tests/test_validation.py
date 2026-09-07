@@ -166,6 +166,66 @@ class TestPythonInputValidation(TestCase):
         finally:
             sys.modules.pop(module_name, None)
 
+    def test_set_backend_cache_release_retention_and_failed_attach(self):
+        class RecordingBackend:
+            instances = []
+
+            def __init__(self, *_args):
+                type(self).instances.append(self)
+                self.num_variables = 0
+                self.num_constraints = 0
+
+            def add_variables(self, n, *_args):
+                start = self.num_variables
+                self.num_variables += n
+                return list(range(start, self.num_variables))
+
+            def add_constraints(self, variables, *_args):
+                start = self.num_constraints
+                self.num_constraints += len(variables)
+                return list(range(start, self.num_constraints))
+
+            def set_objective(self, *_args):
+                pass
+
+            def set_optimizer_attr(self, *_args):
+                pass
+
+            def update(self):
+                pass
+
+        class FailingBackend(RecordingBackend):
+            def add_variables(self, *_args):
+                raise RuntimeError("injected attach failure")
+
+        module_names = ("moirspy_recording_a", "moirspy_recording_b", "moirspy_failing")
+        sys.modules[module_names[0]] = types.SimpleNamespace(Model=RecordingBackend)
+        sys.modules[module_names[1]] = types.SimpleNamespace(Model=RecordingBackend)
+        sys.modules[module_names[2]] = types.SimpleNamespace(Model=FailingBackend)
+        try:
+            released = Model("released")
+            released.addVars(2)
+            released.setBackend("recording_a")
+            released.addVar()
+            with self.assertRaisesRegex(RuntimeError, "cache was released"):
+                released.setBackend("recording_b")
+
+            retained = Model("retained")
+            retained.addVars(2)
+            retained.setBackend("recording_a", keep_cache=True)
+            retained.setBackend("recording_b", keep_cache=True)
+            self.assertEqual(RecordingBackend.instances[-1].num_variables, 2)
+
+            retry = Model("failed-attach")
+            retry.addVars(3)
+            with self.assertRaisesRegex(RuntimeError, "injected attach failure"):
+                retry.setBackend("failing")
+            retry.setBackend("recording_a")
+            self.assertEqual(RecordingBackend.instances[-1].num_variables, 3)
+        finally:
+            for module_name in module_names:
+                sys.modules.pop(module_name, None)
+
 
 if __name__ == "__main__":
     import unittest
