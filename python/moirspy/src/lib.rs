@@ -19,6 +19,8 @@ use pyo3::prelude::*;
 mod moirspy {
     #[pymodule_export]
     use crate::backends::copt::{CoptConstants, CoptEnv, CoptEnvConfig};
+    #[pymodule_export]
+    use crate::backends::gurobi::GurobiEnv;
 
     use crate::moi::*;
 

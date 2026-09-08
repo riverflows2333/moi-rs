@@ -1,6 +1,10 @@
 use crate::backends::copt::{
     CoptEnv, create_direct_optimizer, create_optimizer as create_copt_optimizer,
 };
+use crate::backends::gurobi::{
+    GurobiEnv, create_direct_optimizer as create_direct_gurobi_optimizer,
+    create_optimizer as create_gurobi_optimizer,
+};
 use crate::constr::Constr;
 use crate::direct::DirectModel;
 use crate::expr::LinExpr;
@@ -50,9 +54,26 @@ impl Model {
                 };
                 ModelRuntime::Direct(DirectModel::with_optimizer(optimizer))
             }
+            Some("gurobi") => {
+                let optimizer = match env.as_ref() {
+                    Some(env) => {
+                        let gurobi_env = env
+                            .bind(py)
+                            .extract::<PyRef<'_, GurobiEnv>>()
+                            .map_err(|_| {
+                                PyErr::new::<pyo3::exceptions::PyTypeError, _>(
+                                    "Model(..., backend='gurobi', env=...) requires moirspy.GurobiEnv",
+                                )
+                            })?;
+                        create_direct_gurobi_optimizer(Some(&gurobi_env), Some(&name))?
+                    }
+                    None => create_direct_gurobi_optimizer(None, Some(&name))?,
+                };
+                ModelRuntime::Direct(DirectModel::with_optimizer(optimizer))
+            }
             Some(other) => {
                 return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
-                    "direct backend '{other}' is not available; currently supported: 'copt'"
+                    "direct backend '{other}' is not available; currently supported: 'copt', 'gurobi'"
                 )));
             }
         };
@@ -396,6 +417,25 @@ impl Model {
                 }
             } else {
                 let optimizer = create_copt_optimizer(None)?;
+                return self
+                    .runtime
+                    .cached_mut("set backend")
+                    .map_err(to_py_runtime_error)?
+                    .attach_native_backend(optimizer, keep_cache);
+            }
+        }
+        if backend == "gurobi" {
+            if let Some(env_handle) = env.as_ref() {
+                if let Ok(gurobi_env) = env_handle.bind(py).extract::<PyRef<'_, GurobiEnv>>() {
+                    let optimizer = create_gurobi_optimizer(Some(&gurobi_env), Some(&self.name))?;
+                    return self
+                        .runtime
+                        .cached_mut("set backend")
+                        .map_err(to_py_runtime_error)?
+                        .attach_native_backend(optimizer, keep_cache);
+                }
+            } else {
+                let optimizer = create_gurobi_optimizer(None, Some(&self.name))?;
                 return self
                     .runtime
                     .cached_mut("set backend")
