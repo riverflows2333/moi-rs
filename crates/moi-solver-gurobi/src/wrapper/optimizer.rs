@@ -183,9 +183,157 @@ impl GurobiOptimizer {
         )?;
         Ok(count > 0)
     }
+
+    pub fn num_variables(&self) -> usize {
+        self.num_vars
+    }
+
+    pub fn num_constraints(&self) -> usize {
+        self.num_constrs
+    }
 }
 
 impl ModelLike for GurobiOptimizer {
+    fn add_linear_rows(&mut self, rows: LinearRows) -> Result<std::ops::Range<usize>, MoiError> {
+        rows.validate()?;
+        if rows.num_cols != self.num_vars {
+            return Err(MoiError::InvalidInput(
+                "linear row column count does not match model".into(),
+            ));
+        }
+        let n = rows.num_rows();
+        let end = self
+            .num_constrs
+            .checked_add(n)
+            .ok_or_else(|| MoiError::InvalidInput("constraint count overflow".into()))?;
+        let native_n = c_int::try_from(n)
+            .map_err(|_| MoiError::InvalidInput("constraint count exceeds c_int range".into()))?;
+        let native_nnz = c_int::try_from(rows.coefficients.len()).map_err(|_| {
+            MoiError::InvalidInput("constraint nonzero count exceeds c_int range".into())
+        })?;
+
+        let mut senses = Vec::with_capacity(n);
+        let mut rhs = Vec::with_capacity(n);
+        for (&lower, &upper) in rows.row_lower.iter().zip(&rows.row_upper) {
+            match (lower.is_finite(), upper.is_finite()) {
+                (false, true) => {
+                    senses.push(GRB_LESS_EQUAL as c_char);
+                    rhs.push(upper);
+                }
+                (true, false) => {
+                    senses.push(GRB_GREATER_EQUAL as c_char);
+                    rhs.push(lower);
+                }
+                (true, true) if lower == upper => {
+                    senses.push(GRB_EQUAL as c_char);
+                    rhs.push(lower);
+                }
+                _ => {
+                    return Err(MoiError::UnsupportedConstraint {
+                        func: "scalar linear",
+                        set: "interval",
+                    });
+                }
+            }
+        }
+        let names = rows
+            .names
+            .as_ref()
+            .map(|names| {
+                names
+                    .iter()
+                    .map(|name| Self::cstring(name, "constraint name"))
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .transpose()?;
+        let name_ptrs = names
+            .as_ref()
+            .map(|names| names.iter().map(|name| name.as_ptr()).collect::<Vec<_>>());
+        if n != 0 {
+            Self::check(
+                unsafe {
+                    (self.api.GRBaddconstrs)(
+                        self.model,
+                        native_n,
+                        native_nnz,
+                        rows.row_offsets.as_ptr(),
+                        rows.col_indices.as_ptr(),
+                        rows.coefficients.as_ptr(),
+                        senses.as_ptr(),
+                        rhs.as_ptr(),
+                        name_ptrs.as_ref().map_or(std::ptr::null(), Vec::as_ptr),
+                    )
+                },
+                "GRBaddconstrs",
+            )?;
+            self.invalidate_solution();
+        }
+        let range = self.num_constrs..end;
+        self.num_constrs = end;
+        Ok(range)
+    }
+
+    fn set_linear_objective(
+        &mut self,
+        objective: LinearObjective,
+        sense: ModelSense,
+    ) -> Result<(), MoiError> {
+        objective.validate()?;
+        if objective.num_cols != self.num_vars {
+            return Err(MoiError::InvalidInput(
+                "objective column count does not match model".into(),
+            ));
+        }
+        let mut coefficients = vec![0.0; self.num_vars];
+        for (&index, &coefficient) in objective.col_indices.iter().zip(&objective.coefficients) {
+            coefficients[index as usize] += coefficient;
+            if !coefficients[index as usize].is_finite() {
+                return Err(MoiError::InvalidInput(
+                    "summed objective coefficient must be finite".into(),
+                ));
+            }
+        }
+        unsafe {
+            if self.num_vars != 0 {
+                Self::check(
+                    (self.api.GRBsetdblattrarray)(
+                        self.model,
+                        GRB_DBL_ATTR_OBJ.as_ptr().cast::<c_char>(),
+                        0,
+                        c_int::try_from(self.num_vars).map_err(|_| {
+                            MoiError::InvalidInput(
+                                "objective column count exceeds c_int range".into(),
+                            )
+                        })?,
+                        coefficients.as_mut_ptr(),
+                    ),
+                    "GRBsetdblattrarray(Obj)",
+                )?;
+            }
+            Self::check(
+                (self.api.GRBsetdblattr)(
+                    self.model,
+                    GRB_DBL_ATTR_OBJCON.as_ptr().cast::<c_char>(),
+                    objective.constant,
+                ),
+                "GRBsetdblattr(ObjCon)",
+            )?;
+            Self::check(
+                (self.api.GRBsetintattr)(
+                    self.model,
+                    GRB_INT_ATTR_MODELSENSE.as_ptr().cast::<c_char>(),
+                    match sense {
+                        ModelSense::Minimize => GRB_MINIMIZE,
+                        ModelSense::Maximize => GRB_MAXIMIZE,
+                    },
+                ),
+                "GRBsetintattr(ModelSense)",
+            )?;
+        }
+        self.invalidate_solution();
+        Ok(())
+    }
+
     fn add_variables(
         &mut self,
         n: usize,
@@ -248,19 +396,26 @@ impl ModelLike for GurobiOptimizer {
             }
         }
 
-        let names: Vec<String> = match name {
-            Some(NameType::Single(s)) => (0..n).map(|i| format!("{s}_{i}")).collect(),
+        let names: Option<Vec<String>> = match name {
+            Some(NameType::Single(s)) => Some((0..n).map(|i| format!("{s}_{i}")).collect()),
             Some(NameType::Vector(v)) => {
                 ensure_len(v.len(), n, "variable names")?;
-                v
+                Some(v)
             }
-            None => (0..n).map(|i| format!("x{}", start_idx + i)).collect(),
+            None => None,
         };
         let cnames = names
-            .iter()
-            .map(|name| Self::cstring(name, "variable name"))
-            .collect::<Result<Vec<_>, _>>()?;
-        let cname_ptrs: Vec<*const c_char> = cnames.iter().map(|s| s.as_ptr()).collect();
+            .as_ref()
+            .map(|names| {
+                names
+                    .iter()
+                    .map(|name| Self::cstring(name, "variable name"))
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .transpose()?;
+        let cname_ptrs = cnames
+            .as_ref()
+            .map(|names| names.iter().map(|name| name.as_ptr()).collect::<Vec<_>>());
 
         let ret = unsafe {
             (self.api.GRBaddvars)(
@@ -274,7 +429,7 @@ impl ModelLike for GurobiOptimizer {
                 lbs.as_ptr(),
                 ubs.as_ptr(),
                 vtypes.as_ptr(),
-                cname_ptrs.as_ptr(),
+                cname_ptrs.as_ref().map_or(std::ptr::null(), Vec::as_ptr),
             )
         };
         Self::check(ret, "GRBaddvars")?;
@@ -310,15 +465,12 @@ impl ModelLike for GurobiOptimizer {
         let mut cval = Vec::new();
         let mut senses = Vec::with_capacity(n);
         let mut rhs_values = Vec::with_capacity(n);
-        let mut constraint_names = Vec::with_capacity(n);
+        let mut constraint_names = names.as_ref().map(|_| Vec::with_capacity(n));
 
         for (i, (f, s)) in fs.into_iter().zip(ss).enumerate() {
             let info = ConstrInfo {
                 row_index: start_idx + i,
-                name: names
-                    .as_ref()
-                    .map(|ns| ns[i].clone())
-                    .unwrap_or_else(|| format!("c{}", start_idx + i)),
+                name: names.as_ref().map(|ns| ns[i].clone()).unwrap_or_default(),
                 f,
                 s,
             };
@@ -344,12 +496,13 @@ impl ModelLike for GurobiOptimizer {
             cval.extend(coeffs);
             senses.push(sense as c_char);
             rhs_values.push(rhs);
-            constraint_names.push(Self::cstring(&info.name, "constraint name")?);
+            if let Some(constraint_names) = &mut constraint_names {
+                constraint_names.push(Self::cstring(&info.name, "constraint name")?);
+            }
         }
         let name_ptrs = constraint_names
-            .iter()
-            .map(|name| name.as_ptr())
-            .collect::<Vec<_>>();
+            .as_ref()
+            .map(|names| names.iter().map(|name| name.as_ptr()).collect::<Vec<_>>());
         let ret = unsafe {
             (self.api.GRBaddconstrs)(
                 self.model,
@@ -362,7 +515,7 @@ impl ModelLike for GurobiOptimizer {
                 cval.as_ptr(),
                 senses.as_ptr(),
                 rhs_values.as_ptr(),
-                name_ptrs.as_ptr(),
+                name_ptrs.as_ref().map_or(std::ptr::null(), Vec::as_ptr),
             )
         };
         Self::check(ret, "GRBaddconstrs")?;
