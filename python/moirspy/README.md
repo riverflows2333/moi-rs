@@ -9,11 +9,10 @@ pluggable solver backends.
 
 ## Installation
 
-Install the modeling package, plus the optional Gurobi compatibility backend
-when Gurobi is needed:
+Install the modeling package; it contains both native high-level backends:
 
 ```bash
-python -m pip install moirspy moirspy-gurobi
+python -m pip install moirspy
 ```
 
 Solver backends require the corresponding native solver installation and
@@ -38,8 +37,8 @@ import os
 os.environ["GUROBI_HOME"] = "/opt/gurobi1203"
 ```
 
-If the environment variable cannot be set, instantiate the low-level
-`moirspy_gurobi.Model` backend with the full native-library path in `dll_path`.
+If the environment variable cannot be set, instantiate `moirspy.GurobiEnv` with
+the full native-library path in `dll_path`.
 
 ## Example
 
@@ -64,10 +63,10 @@ print("objective:", model.ObjVal)
 print("x:", [x[i].X for i in range(3)])
 ```
 
-The COPT backend is built into `moirspy` and calls the native Rust optimizer
-without importing `moirspy_copt`. The separate package remains available as a
-low-level compatibility API. Gurobi still uses its backend package in this
-release. The bridge synchronizes existing model data when a backend is attached.
+The COPT and Gurobi backends are built into `moirspy` and call their native Rust
+optimizers without importing solver packages. The separate packages remain
+available as low-level compatibility APIs. The bridge synchronizes existing
+model data when a backend is attached.
 
 ## Backend execution modes
 
@@ -75,12 +74,13 @@ release. The bridge synchronizes existing model data when a backend is attached.
 | --- | --- | --- | --- |
 | COPT Direct | `Model(name, backend="copt")` | Minimal counts and native state | None |
 | COPT Cached attach | `Model(name)` then `setBackend("copt")` | Released after attach unless `keep_cache=True` | None |
-| Legacy package | `setBackend("gurobi")` or a third-party backend | Controlled by `keep_cache` | Compatibility `PyBackend` |
+| Gurobi Direct/Cached | `backend="gurobi"` or `setBackend("gurobi")` | Same Direct/Cached policy | None |
+| Legacy package | third-party `moirspy_<name>` backend | Controlled by `keep_cache` | Compatibility `PyBackend` |
 
 The legacy transport is compiled by the `legacy-python-backend` Cargo feature
-for one compatibility cycle. It is enabled in published wheels while Gurobi and
-third-party packages still depend on it. Source builds that only require native
-COPT can use `--no-default-features`; unknown/package backends then fail with an
+for one compatibility cycle. It is enabled in published wheels while third-party
+packages still depend on it. Source builds that only require built-in backends
+can use `--no-default-features`; unknown/package backends then fail with an
 explicit error. `moirspy_copt.Model` and `moirspy_gurobi.Model` remain supported
 as low-level APIs and are not required by the built-in COPT path.
 
@@ -99,9 +99,9 @@ as low-level APIs and are not required by the built-in COPT path.
   environment. By default, replay-only model data is released after a successful
   attach. Pass `keep_cache=True` when the model must later be copied to another
   backend.
-- `Model(name, backend="copt", env=None)` creates a native Direct model. Its
-  variables, constraints, objective, and parameters go straight to COPT without
-  retaining a replayable model cache. Use the default constructor followed by
+- `Model(name, backend="copt" | "gurobi", env=None)` creates a native Direct
+  model. Its variables, constraints, objective, and parameters go straight to
+  the selected solver without retaining a replayable model cache. Use the default constructor followed by
   `setBackend` when late solver selection is required; opt into `keep_cache=True`
   when repeated backend switching is required.
 - `CoptEnv(...)` and `CoptEnvConfig(...)` configure the built-in native COPT

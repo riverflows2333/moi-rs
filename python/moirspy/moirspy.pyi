@@ -47,6 +47,15 @@ class CoptEnv:
         config: Optional[CoptEnvConfig] = ...,
     ) -> None: ...
 
+class GurobiEnv:
+    def __init__(
+        self, dll_path: Optional[str] = ..., empty: bool = ...
+    ) -> None: ...
+    def setParam(self, name: str, value: EnvConfigValue) -> None: ...
+    def start(self) -> None: ...
+    @property
+    def started(self) -> bool: ...
+
 class Constr:
     """A pending scalar linear constraint created by a comparison."""
 
@@ -92,7 +101,7 @@ class Model:
         self,
         name: str,
         backend: Optional[str] = ...,
-        env: Optional[CoptEnv] = ...,
+        env: Optional[Union[CoptEnv, GurobiEnv]] = ...,
     ) -> None: ...
     def addVar(
         self,
@@ -122,7 +131,7 @@ class Model:
     def setBackend(
         self,
         backend: str,
-        env: Optional[Union[CoptEnv, object]] = ...,
+        env: Optional[Union[CoptEnv, GurobiEnv, object]] = ...,
         *,
         keep_cache: bool = ...,
     ) -> None: ...

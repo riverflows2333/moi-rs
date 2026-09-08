@@ -1,18 +1,17 @@
 # moirspy-gurobi
 
-`moirspy-gurobi` is the native Gurobi backend for the
-[`moirspy`](https://pypi.org/project/moirspy/) optimization-modeling package.
-The extension is implemented in Rust and loads the Gurobi native library at
-runtime. Its low-level API remains stable for the current compatibility cycle;
-the high-level `setBackend("gurobi")` path currently reaches it through
-moirspy's feature-gated legacy Python transport until native integration lands.
+`moirspy-gurobi` is the optional low-level and compatibility Gurobi package for
+[`moirspy`](https://pypi.org/project/moirspy/). The extension is implemented in
+Rust and loads the Gurobi native library at runtime. Current `moirspy` releases
+already include the native high-level Gurobi backend, so this package is only
+needed for the `moirspy_gurobi` low-level import path.
 
 > The project is under active development and its API is not yet stable.
 
 ## Installation
 
 ```bash
-python -m pip install moirspy moirspy-gurobi
+python -m pip install moirspy-gurobi
 ```
 
 This package does not bundle Gurobi or a license. Install Gurobi separately and
@@ -62,7 +61,8 @@ print(model.ObjVal)
 ```
 
 Existing model data is synchronized when `setBackend("gurobi")` is called;
-later changes are forwarded incrementally.
+later changes are forwarded incrementally. This workflow is implemented inside
+`moirspy` and does not import or call `moirspy_gurobi.Model`.
 
 ## Low-level API
 
@@ -103,9 +103,9 @@ The same environment can be passed through the high-level modeling API:
 
 ```python
 from moirspy import Model
-from moirspy_gurobi import Env
+from moirspy import GurobiEnv
 
-env = Env()
+env = GurobiEnv()
 model = Model("high-level")
 model.setBackend("gurobi", env=env)
 ```

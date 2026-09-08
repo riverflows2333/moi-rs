@@ -18,18 +18,18 @@ select a backend, and optimize.
 | Package | Import name | Purpose |
 | --- | --- | --- |
 | [`moirspy`](https://pypi.org/project/moirspy/) | `moirspy` | Modeling API with built-in native COPT backend |
-| [`moirspy-gurobi`](https://pypi.org/project/moirspy-gurobi/) | `moirspy_gurobi` | Low-level Gurobi API and current high-level compatibility transport |
+| [`moirspy-gurobi`](https://pypi.org/project/moirspy-gurobi/) | `moirspy_gurobi` | Optional low-level/compatibility Gurobi API |
 | `moirspy-copt` | `moirspy_copt` | Optional low-level/compatibility COPT API |
 
-The packages require Python 3.8 or newer. To model and solve with Gurobi,
-install both packages:
+The packages require Python 3.8 or newer. The high-level COPT and Gurobi
+backends are both included in `moirspy`:
 
 ```bash
-python -m pip install moirspy moirspy-gurobi
+python -m pip install moirspy
 ```
 
-`moirspy-gurobi` does not bundle Gurobi or a license. Install Gurobi separately
-and make sure its native library and license are available.
+`moirspy` does not bundle either solver or a license. Install the selected solver
+separately and make sure its native library and license are available.
 
 The high-level COPT backend is installed with `python -m pip install moirspy`
 and discovers COPT through `COPT_HOME`. `moirspy-copt` remains optional for its
@@ -54,8 +54,8 @@ import os
 os.environ["GUROBI_HOME"] = "/opt/gurobi1203"
 ```
 
-If `GUROBI_HOME` cannot be set, use the low-level `moirspy_gurobi.Model`
-constructor and pass the full native-library path through `dll_path`.
+If `GUROBI_HOME` cannot be set, pass the full native-library path to the built-in
+`moirspy.GurobiEnv` constructor.
 
 ## Quick start
 
@@ -80,8 +80,8 @@ print("objective:", model.ObjVal)
 print("x:", [x[i].X for i in range(3)])
 ```
 
-`setBackend("gurobi")` dynamically imports `moirspy_gurobi`. Existing model
-data is synchronized when the backend is attached, and subsequent variables,
+`setBackend("gurobi")` creates the native Rust backend inside the main extension.
+Existing model data is synchronized when the backend is attached, and subsequent variables,
 constraints, objectives, and parameters are forwarded incrementally. A successful
 attach releases replay-only data by default; use
 `setBackend("gurobi", keep_cache=True)` only when the model must later be replayed
@@ -101,10 +101,10 @@ not retain the replayable variable/constraint cache. The default
 `Model(name)` plus `setBackend(...)` workflow remains available when the model
 must be built before choosing a solver.
 
-Both COPT workflows are native inside the main `moirspy` extension and make no
-calls through a Python solver object. The package-based Python transport remains
-behind the default `legacy-python-backend` Cargo feature for Gurobi and external
-backends during one compatibility cycle. The separate `moirspy_copt` and
+Both COPT and Gurobi workflows are native inside the main `moirspy` extension
+and make no calls through a Python solver object. The package-based Python
+transport remains behind the default `legacy-python-backend` Cargo feature for
+external backends during one compatibility cycle. The separate `moirspy_copt` and
 `moirspy_gurobi` packages continue to expose their low-level APIs; no import path
 is removed in this release.
 
@@ -170,13 +170,12 @@ Gurobi backend, raw names such as `OutputFlag` and `MIPGap` are forwarded to
 Gurobi. With COPT, use names such as `Logging`, `Threads`, and `TimeLimit` with
 Boolean, integer, or floating-point values.
 
-An explicit Gurobi environment can be imported from the solver package and
-passed through the generic backend boundary:
+An explicit native Gurobi environment is provided by the main package:
 
 ```python
-from moirspy_gurobi import Env
+from moirspy import GurobiEnv
 
-env = Env()
+env = GurobiEnv()
 env.setParam("OutputFlag", 0)
 model.setBackend("gurobi", env=env)
 ```
