@@ -21,4 +21,5 @@ moi-core.workspace = true
 moi-solver-api.workspace = true
 moi-bridge.workspace = true
 moi-solver-copt.workspace = true
+moi-solver-gurobi.workspace = true
 numpy = "0.29.0"

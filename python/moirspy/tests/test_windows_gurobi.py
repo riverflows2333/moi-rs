@@ -11,8 +11,7 @@ if sys.platform == "win32" and GUROBI_DLL.exists():
     os.environ["GUROBI_HOME"] = str(GUROBI_HOME)
 
 try:
-    from moirspy import MOI, Model
-    from moirspy_gurobi import Env as GurobiEnv
+    from moirspy import MOI, GurobiEnv, Model
 except ImportError:
     MOI = None
     Model = None
@@ -149,6 +148,49 @@ class WindowsGurobiModelTests(unittest.TestCase):
         model.optimize()
 
         self.assertAlmostEqual(x.X, 3.0, places=7)
+
+    def test_direct_and_cached_native_paths_match_without_plugin_import(self):
+        previous = sys.modules.get("moirspy_gurobi")
+        sys.modules["moirspy_gurobi"] = None
+        try:
+            objectives = []
+            solutions = []
+            for direct in (False, True):
+                try:
+                    model = (
+                        Model("windows-native-direct", backend="gurobi")
+                        if direct
+                        else Model("windows-native-cached")
+                    )
+                except RuntimeError as error:
+                    if "10009" in str(error):
+                        self.skipTest(
+                            "Gurobi runtime is available but no license is active"
+                        )
+                    raise
+                model.setParam("OutputFlag", 0)
+                x = model.addVars(3, vtype=MOI.BINARY, name=None)
+                model.addConstrs(
+                    (
+                        x[0] + 2 * x[1] + 3 * x[2] <= 4,
+                        x[0] + x[1] >= 1,
+                    ),
+                    name=None,
+                )
+                model.setObjective(x[0] + x[1] + 2 * x[2], MOI.MAXIMIZE)
+                if not direct:
+                    model.setBackend("gurobi")
+                model.optimize()
+                objectives.append(model.ObjVal)
+                solutions.append([round(x[i].X) for i in range(3)])
+
+            self.assertEqual(objectives, [3.0, 3.0])
+            self.assertEqual(solutions, [[1, 0, 1], [1, 0, 1]])
+        finally:
+            if previous is None:
+                sys.modules.pop("moirspy_gurobi", None)
+            else:
+                sys.modules["moirspy_gurobi"] = previous
 
 
 if __name__ == "__main__":

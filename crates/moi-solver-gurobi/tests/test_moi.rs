@@ -79,3 +79,79 @@ fn test_gurobi_solver_solve() {
     assert_eq!(solver.get_objective_value().unwrap(), None);
     assert_eq!(solver.get_model_attr(ModelAttr::TerminationStatus), None);
 }
+
+#[test]
+fn linear_rows_and_objective_use_native_batch_path() {
+    let Some((library, _)) = find_library() else {
+        return;
+    };
+    let Ok(api) = GurobiApi::new(library) else {
+        return;
+    };
+    let Ok(env) = GurobiEnv::new(Arc::new(api)) else {
+        return;
+    };
+    let mut solver = GurobiOptimizer::new(Arc::new(Mutex::new(env)), Some("linear-batch"))
+        .expect("model creation should succeed after environment startup");
+    let variables = solver
+        .add_variables(
+            2,
+            None,
+            Some(vec!['C', 'C']),
+            Some(BoundType::Single(0.0)),
+            Some(BoundType::Single(f64::INFINITY)),
+        )
+        .unwrap();
+
+    let mut rows = LinearRows::new(2);
+    let mut row = ScalarAffineFn::default();
+    row.push_term(variables[0], 1.0);
+    row.push_term(variables[1], 1.0);
+    rows.push(
+        &ScalarFunctionType::Affine(row),
+        &ScalarSetType::GreaterThan(3.0),
+    )
+    .unwrap();
+    assert_eq!(solver.add_linear_rows(rows).unwrap(), 0..1);
+
+    let objective = LinearObjective {
+        num_cols: 2,
+        col_indices: vec![0, 1],
+        coefficients: vec![1.0, 2.0],
+        constant: 4.0,
+    };
+    solver
+        .set_linear_objective(objective, ModelSense::Minimize)
+        .unwrap();
+    solver
+        .set_linear_objective(
+            LinearObjective {
+                num_cols: 2,
+                col_indices: vec![0],
+                coefficients: vec![1.0],
+                constant: 1.0,
+            },
+            ModelSense::Minimize,
+        )
+        .unwrap();
+    solver
+        .set_optimizer_attr(OptimizerAttr::Silent, AttrValue::Bool(true))
+        .unwrap();
+    assert_eq!(solver.optimize().unwrap(), SolveStatus::Optimal);
+    assert!((solver.get_objective_value().unwrap().unwrap() - 1.0).abs() < 1e-8);
+    assert_eq!(solver.num_variables(), 2);
+    assert_eq!(solver.num_constraints(), 1);
+
+    let mut interval = LinearRows::new(2);
+    interval
+        .push(
+            &ScalarFunctionType::Variable(variables[0]),
+            &ScalarSetType::Interval(0.0, 1.0),
+        )
+        .unwrap();
+    assert!(matches!(
+        solver.add_linear_rows(interval),
+        Err(MoiError::UnsupportedConstraint { .. })
+    ));
+    assert_eq!(solver.num_constraints(), 1);
+}

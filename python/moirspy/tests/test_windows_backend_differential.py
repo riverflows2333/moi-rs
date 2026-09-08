@@ -17,8 +17,7 @@ if sys.platform == "win32":
 
 try:
     from benchmark.copt_env import create_copt_env
-    from moirspy import MOI, Model
-    from moirspy_gurobi import Env as GurobiEnv
+    from moirspy import MOI, GurobiEnv, Model
 except ImportError:
     create_copt_env = None
     MOI = None

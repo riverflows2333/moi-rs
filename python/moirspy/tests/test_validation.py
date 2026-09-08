@@ -78,7 +78,7 @@ class TestPythonInputValidation(TestCase):
     def test_direct_constructor_requires_a_supported_backend(self):
         with self.assertRaisesRegex(ValueError, "env requires"):
             Model("env-without-backend", env=object())
-        with self.assertRaisesRegex(ValueError, "currently supported: 'copt'"):
+        with self.assertRaisesRegex(ValueError, "currently supported: 'copt', 'gurobi'"):
             Model("unsupported-direct", backend="not-a-solver")
 
     def test_backend_getter_exceptions_are_propagated(self):
