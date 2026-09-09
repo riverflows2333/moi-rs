@@ -51,6 +51,8 @@ class WindowsGurobiModelTests(unittest.TestCase):
 
         self.assertAlmostEqual(model.ObjVal, 3.0, places=7)
         self.assertEqual([round(x[i].X) for i in range(3)], [1, 0, 1])
+        self.assertEqual(x.X.shape, (3,))
+        self.assertEqual(x.X.round().astype(int).tolist(), [1, 0, 1])
 
     def test_vector_bounds_are_forwarded_to_backend(self):
         model = self.new_model("windows-vector-bounds")
@@ -179,7 +181,14 @@ class WindowsGurobiModelTests(unittest.TestCase):
                 )
                 model.setObjective(x[0] + x[1] + 2 * x[2], MOI.MAXIMIZE)
                 if not direct:
-                    model.setBackend("gurobi")
+                    try:
+                        model.setBackend("gurobi")
+                    except RuntimeError as error:
+                        if "10009" in str(error):
+                            self.skipTest(
+                                "Gurobi runtime is available but no license is active"
+                            )
+                        raise
                 model.optimize()
                 objectives.append(model.ObjVal)
                 solutions.append([round(x[i].X) for i in range(3)])

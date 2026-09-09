@@ -46,6 +46,10 @@ fn configured_solution_is_visible_only_after_optimize() {
     assert_eq!(model.get_var_value(variable).unwrap(), None);
     assert_eq!(model.optimize().unwrap(), SolveStatus::Optimal);
     assert_eq!(model.get_var_value(variable).unwrap(), Some(3.0));
+    assert_eq!(
+        model.get_var_values(&[variable, variable]).unwrap(),
+        Some(vec![3.0, 3.0])
+    );
     assert_eq!(model.get_objective_value().unwrap(), Some(6.0));
     assert_eq!(
         model.get_model_attr(ModelAttr::ResultCount),

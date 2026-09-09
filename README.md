@@ -181,7 +181,17 @@ model.setBackend("gurobi", env=env)
 ```
 
 After `optimize()`, `model.ObjVal` is the objective value and `variable.X` is the
-variable value. Either property returns `None` if its result is unavailable.
+variable value. A multidimensional variable collection exposes all primal values
+with one Python-to-Rust call as a NumPy array with the same shape:
+
+```python
+model.optimize()
+values = x.X
+```
+
+For native COPT models this reads the solution vector cached by `optimize()`.
+For a contiguous Gurobi variable collection it uses one native attribute-array
+read. These properties return `None` when their result is unavailable.
 
 ## Low-level Gurobi API
 

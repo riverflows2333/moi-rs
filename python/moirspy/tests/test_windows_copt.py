@@ -44,6 +44,8 @@ class WindowsCoptModelTests(unittest.TestCase):
 
         self.assertAlmostEqual(model.ObjVal, 4.0, places=7)
         self.assertEqual([round(x[i].X) for i in range(3)], [1, 0, 1])
+        self.assertEqual(x.X.shape, (3,))
+        self.assertEqual(x.X.round().astype(int).tolist(), [1, 0, 1])
 
     def test_direct_binary_model_matches_cached_model(self):
         env = CoptEnv(str(COPT_DLL))
@@ -125,6 +127,11 @@ class WindowsCoptModelTests(unittest.TestCase):
                 gc.collect()
                 self.assertAlmostEqual(fixed.X, 1)
                 self.assertAlmostEqual(x[1, 1].X, 1)
+                self.assertEqual(x.X.shape, (2, 2))
+                self.assertEqual(
+                    x.X.tolist(),
+                    [[x[i, j].X for j in range(2)] for i in range(2)],
+                )
 
     def test_direct_batch_validation_is_atomic(self):
         from moirspy import Var

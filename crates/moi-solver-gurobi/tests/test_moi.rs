@@ -68,6 +68,14 @@ fn test_gurobi_solver_solve() {
     assert_eq!(solver.get_var_value(var_id2).unwrap(), Some(0.0));
     assert_eq!(solver.get_var_value(var_id3).unwrap(), Some(1.0));
     assert_eq!(
+        solver.get_var_values_range(0..3).unwrap(),
+        Some(vec![1.0, 0.0, 1.0])
+    );
+    assert_eq!(
+        solver.get_var_values(&[var_id3, var_id1, var_id2]).unwrap(),
+        Some(vec![1.0, 1.0, 0.0])
+    );
+    assert_eq!(
         solver.get_model_attr(ModelAttr::TerminationStatus),
         Some(AttrValue::Status(SolveStatus::Optimal))
     );
@@ -76,6 +84,7 @@ fn test_gurobi_solver_solve() {
         .set_optimizer_attr(OptimizerAttr::Silent, AttrValue::Bool(true))
         .unwrap();
     assert_eq!(solver.get_var_value(var_id1).unwrap(), None);
+    assert_eq!(solver.get_var_values_range(0..3).unwrap(), None);
     assert_eq!(solver.get_objective_value().unwrap(), None);
     assert_eq!(solver.get_model_attr(ModelAttr::TerminationStatus), None);
 }
