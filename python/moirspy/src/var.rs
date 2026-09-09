@@ -2,6 +2,7 @@ use crate::constr::Constr;
 use crate::expr::LinExpr;
 use crate::utils::*;
 use moi_core::*;
+use numpy::{PyArray1, PyArrayDyn, PyArrayMethods, ndarray::IxDyn};
 use pyo3::prelude::*;
 
 #[pyclass(from_py_object)]
@@ -333,6 +334,25 @@ impl Vars {
             id: var_id,
             result_source: self.result_source.clone(),
         })
+    }
+    #[getter]
+    #[pyo3(name = "X")]
+    fn get_x<'py>(&self, py: Python<'py>) -> PyResult<Option<Bound<'py, PyArrayDyn<f64>>>> {
+        let Some(result_source) = &self.result_source else {
+            return Ok(None);
+        };
+        let values = match &self.var_ids {
+            VariableIds::Range { start, len } => {
+                result_source.get_var_values_range(*start..*start + *len)?
+            }
+            VariableIds::Explicit(ids) => result_source.get_var_values(ids)?,
+        };
+        let Some(values) = values else {
+            return Ok(None);
+        };
+        PyArray1::from_vec(py, values)
+            .reshape(IxDyn(&self.shape))
+            .map(Some)
     }
     fn __str__(&self) -> String {
         format!("Vars(shape={:?}, ids={:?})", self.shape, self.var_ids)

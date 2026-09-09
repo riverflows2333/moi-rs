@@ -134,5 +134,26 @@ pub trait Optimizer: ModelLike {
     fn optimize(&mut self) -> Result<SolveStatus, MoiError>;
     fn compute_conflict(&mut self) -> Result<(), MoiError>;
     fn get_var_value(&self, var_id: VarId) -> Result<Option<f64>, MoiError>;
+    /// Return primal values in the requested order.
+    ///
+    /// Backends should override this when their native API supports array reads.
+    /// The fallback preserves compatibility with third-party optimizers.
+    fn get_var_values(&self, var_ids: &[VarId]) -> Result<Option<Vec<f64>>, MoiError> {
+        let mut values = Vec::with_capacity(var_ids.len());
+        for &var_id in var_ids {
+            let Some(value) = self.get_var_value(var_id)? else {
+                return Ok(None);
+            };
+            values.push(value);
+        }
+        Ok(Some(values))
+    }
+    /// Fast path for a contiguous half-open range of solver column indices.
+    fn get_var_values_range(
+        &self,
+        range: std::ops::Range<usize>,
+    ) -> Result<Option<Vec<f64>>, MoiError> {
+        self.get_var_values(&range.map(VarId).collect::<Vec<_>>())
+    }
     fn get_objective_value(&self) -> Result<Option<f64>, MoiError>;
 }

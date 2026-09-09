@@ -588,6 +588,31 @@ impl Optimizer for CoptOptimizer {
             .copied())
     }
 
+    fn get_var_values(&self, var_ids: &[VarId]) -> Result<Option<Vec<f64>>, MoiError> {
+        for var_id in var_ids {
+            if var_id.0 >= self.num_vars {
+                return Err(MoiError::InvalidVariableIndex(var_id.0));
+            }
+        }
+        let Some(solution) = &self.cached_solution else {
+            return Ok(None);
+        };
+        Ok(Some(var_ids.iter().map(|id| solution[id.0]).collect()))
+    }
+
+    fn get_var_values_range(
+        &self,
+        range: std::ops::Range<usize>,
+    ) -> Result<Option<Vec<f64>>, MoiError> {
+        if range.start > range.end || range.end > self.num_vars {
+            return Err(MoiError::InvalidVariableIndex(range.end));
+        }
+        Ok(self
+            .cached_solution
+            .as_ref()
+            .map(|solution| solution[range].to_vec()))
+    }
+
     fn get_objective_value(&self) -> Result<Option<f64>, MoiError> {
         Ok(self.cached_objective)
     }
@@ -722,5 +747,22 @@ mod linear_batch_tests {
         assert!(model.objective.is_none());
         model.optimize().unwrap();
         assert_eq!(model.get_objective_value().unwrap(), Some(9.0));
+        let scalar_values = (0..2)
+            .map(|index| model.get_var_value(VarId(index)).unwrap().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            model.get_var_values_range(0..2).unwrap(),
+            Some(scalar_values.clone())
+        );
+        assert_eq!(
+            model
+                .get_var_values(&[VarId(1), VarId(0), VarId(1)])
+                .unwrap(),
+            Some(vec![scalar_values[1], scalar_values[0], scalar_values[1]])
+        );
+        assert!(matches!(
+            model.get_var_values_range(0..3),
+            Err(MoiError::InvalidVariableIndex(3))
+        ));
     }
 }

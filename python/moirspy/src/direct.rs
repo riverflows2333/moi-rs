@@ -318,6 +318,33 @@ impl DirectModel {
         Self::optimizer(&mut state)?.get_var_value(id)
     }
 
+    pub fn get_var_values(&self, ids: &[VarId]) -> Result<Option<Vec<f64>>, MoiError> {
+        let mut state = self.lock()?;
+        for id in ids {
+            if id.0 >= state.num_variables {
+                return Err(MoiError::InvalidVariableIndex(id.0));
+            }
+        }
+        if state.lifecycle != LifecycleState::Solved {
+            return Ok(None);
+        }
+        Self::optimizer(&mut state)?.get_var_values(ids)
+    }
+
+    pub fn get_var_values_range(
+        &self,
+        range: std::ops::Range<usize>,
+    ) -> Result<Option<Vec<f64>>, MoiError> {
+        let mut state = self.lock()?;
+        if range.start > range.end || range.end > state.num_variables {
+            return Err(MoiError::InvalidVariableIndex(range.end));
+        }
+        if state.lifecycle != LifecycleState::Solved {
+            return Ok(None);
+        }
+        Self::optimizer(&mut state)?.get_var_values_range(range)
+    }
+
     pub fn get_objective_value(&self) -> Result<Option<f64>, MoiError> {
         let mut state = self.lock()?;
         if state.lifecycle != LifecycleState::Solved {

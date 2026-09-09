@@ -595,6 +595,37 @@ impl Optimizer for BridgeOptimizer {
             .get_var_value(var_id)
     }
 
+    fn get_var_values(&self, var_ids: &[VarId]) -> Result<Option<Vec<f64>>, MoiError> {
+        for var_id in var_ids {
+            if var_id.0 >= self.num_variables {
+                return Err(MoiError::InvalidVariableIndex(var_id.0));
+            }
+        }
+        if self.status != BridgeState::Solved {
+            return Ok(None);
+        }
+        self.backend
+            .as_ref()
+            .ok_or_else(|| MoiError::BackendState("solved model has no attached backend".into()))?
+            .get_var_values(var_ids)
+    }
+
+    fn get_var_values_range(
+        &self,
+        range: std::ops::Range<usize>,
+    ) -> Result<Option<Vec<f64>>, MoiError> {
+        if range.start > range.end || range.end > self.num_variables {
+            return Err(MoiError::InvalidVariableIndex(range.end));
+        }
+        if self.status != BridgeState::Solved {
+            return Ok(None);
+        }
+        self.backend
+            .as_ref()
+            .ok_or_else(|| MoiError::BackendState("solved model has no attached backend".into()))?
+            .get_var_values_range(range)
+    }
+
     fn get_objective_value(&self) -> Result<Option<f64>, MoiError> {
         if self.status != BridgeState::Solved {
             return Ok(None);

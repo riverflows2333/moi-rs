@@ -22,6 +22,29 @@ impl ResultSource {
             Self::Direct(model) => model.get_var_value(id).map_err(to_py_runtime_error),
         }
     }
+
+    pub fn get_var_values(&self, ids: &[VarId]) -> PyResult<Option<Vec<f64>>> {
+        match self {
+            Self::Cached(bridge) => lock_bridge(bridge)?
+                .get_var_values(ids)
+                .map_err(to_py_runtime_error),
+            Self::Direct(model) => model.get_var_values(ids).map_err(to_py_runtime_error),
+        }
+    }
+
+    pub fn get_var_values_range(
+        &self,
+        range: std::ops::Range<usize>,
+    ) -> PyResult<Option<Vec<f64>>> {
+        match self {
+            Self::Cached(bridge) => lock_bridge(bridge)?
+                .get_var_values_range(range)
+                .map_err(to_py_runtime_error),
+            Self::Direct(model) => model
+                .get_var_values_range(range)
+                .map_err(to_py_runtime_error),
+        }
+    }
 }
 
 pub fn lock_bridge(bridge: &SharedBridge) -> PyResult<MutexGuard<'_, BridgeOptimizer>> {

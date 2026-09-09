@@ -794,6 +794,70 @@ impl Optimizer for GurobiOptimizer {
         Ok(Some(val))
     }
 
+    fn get_var_values(&self, var_ids: &[VarId]) -> Result<Option<Vec<f64>>, MoiError> {
+        for var_id in var_ids {
+            if var_id.0 >= self.num_vars {
+                return Err(MoiError::InvalidVariableIndex(var_id.0));
+            }
+        }
+        if !self.solution_valid || !self.has_solution()? {
+            return Ok(None);
+        }
+        if var_ids.is_empty() {
+            return Ok(Some(Vec::new()));
+        }
+
+        let start = var_ids[0].0;
+        let contiguous = var_ids
+            .iter()
+            .enumerate()
+            .all(|(offset, id)| start.checked_add(offset) == Some(id.0));
+        if contiguous {
+            return self.get_var_values_range(start..start + var_ids.len());
+        }
+
+        // Explicit, non-contiguous handles are uncommon. Keep the trait fallback
+        // semantics until a native list getter is part of the minimum API table.
+        let mut values = Vec::with_capacity(var_ids.len());
+        for &var_id in var_ids {
+            values.push(self.get_var_value(var_id)?.expect("solution checked above"));
+        }
+        Ok(Some(values))
+    }
+
+    fn get_var_values_range(
+        &self,
+        range: std::ops::Range<usize>,
+    ) -> Result<Option<Vec<f64>>, MoiError> {
+        if range.start > range.end || range.end > self.num_vars {
+            return Err(MoiError::InvalidVariableIndex(range.end));
+        }
+        if !self.solution_valid || !self.has_solution()? {
+            return Ok(None);
+        }
+        let native_start = c_int::try_from(range.start)
+            .map_err(|_| MoiError::InvalidVariableIndex(range.start))?;
+        let native_len = c_int::try_from(range.len()).map_err(|_| {
+            MoiError::InvalidInput("variable result batch exceeds c_int range".into())
+        })?;
+        let mut values = vec![0.0; range.len()];
+        if !values.is_empty() {
+            Self::check(
+                unsafe {
+                    (self.api.GRBgetdblattrarray)(
+                        self.model,
+                        GRB_DBL_ATTR_X.as_ptr().cast::<c_char>(),
+                        native_start,
+                        native_len,
+                        values.as_mut_ptr(),
+                    )
+                },
+                "GRBgetdblattrarray(X)",
+            )?;
+        }
+        Ok(Some(values))
+    }
+
     fn get_objective_value(&self) -> Result<Option<f64>, MoiError> {
         if !self.solution_valid || !self.has_solution()? {
             return Ok(None);

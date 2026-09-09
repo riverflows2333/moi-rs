@@ -1,5 +1,7 @@
 import types
 from typing import ClassVar, Iterable, List, Optional, Tuple, Union, overload
+from numpy import float64
+from numpy.typing import NDArray
 
 Number = Union[int, float]
 
@@ -82,6 +84,8 @@ class Vars:
     def __getitem__(self, index: Tuple[int, ...]) -> Var: ...
     @overload
     def __getitem__(self, index: List[int]) -> Var: ...
+    @property
+    def X(self) -> Optional[NDArray[float64]]: ...
     def __str__(self) -> str: ...
 
 class LinExpr:
