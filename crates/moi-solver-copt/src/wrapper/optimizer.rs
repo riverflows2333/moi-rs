@@ -521,6 +521,37 @@ impl ModelLike for CoptOptimizer {
 }
 
 impl Optimizer for CoptOptimizer {
+    fn add_primal_start(&mut self, start: PrimalStart) -> Result<(), MoiError> {
+        start.validate()?;
+        if start.variable_ids.is_empty() {
+            return Ok(());
+        }
+        for variable in &start.variable_ids {
+            if variable.0 >= self.num_vars {
+                return Err(MoiError::InvalidVariableIndex(variable.0));
+            }
+        }
+        let count = checked_c_int(start.variable_ids.len(), "MIP start length")?;
+        let indices = start
+            .variable_ids
+            .iter()
+            .map(|variable| checked_c_int(variable.0, "MIP start variable index"))
+            .collect::<Result<Vec<_>, _>>()?;
+        self.check(
+            unsafe {
+                (self.api.COPT_AddMipStart)(
+                    self.prob,
+                    count,
+                    ptr_or_null(&indices),
+                    ptr_or_null(&start.values),
+                )
+            },
+            "COPT_AddMipStart",
+        )?;
+        self.invalidate_solution();
+        Ok(())
+    }
+
     fn optimize(&mut self) -> Result<SolveStatus, MoiError> {
         self.invalidate_solution();
         self.check(unsafe { (self.api.COPT_Solve)(self.prob) }, "COPT_Solve")?;
@@ -659,6 +690,73 @@ fn delete_prob(api: &CoptApi, prob: &mut *mut c_void) {
 #[cfg(test)]
 mod linear_batch_tests {
     use super::*;
+
+    #[test]
+    fn native_partial_mip_start_is_accepted() {
+        let Some(path) = crate::find_library() else {
+            return;
+        };
+        let api = Arc::new(CoptApi::new(path).unwrap());
+        let env = Arc::new(std::sync::Mutex::new(crate::CoptEnv::new(api).unwrap()));
+        let mut model = CoptOptimizer::new(env).unwrap();
+        model
+            .set_optimizer_attr(OptimizerAttr::Silent, AttrValue::Bool(true))
+            .unwrap();
+        model
+            .add_variables(
+                2,
+                None,
+                Some(vec!['B', 'B']),
+                Some(BoundType::Single(0.0)),
+                Some(BoundType::Single(1.0)),
+            )
+            .unwrap();
+        model
+            .add_constraints(
+                vec![ScalarFunctionType::Affine(ScalarAffineFn {
+                    terms: vec![
+                        AffineTerm {
+                            var: VarId(0),
+                            coeff: 1.0,
+                        },
+                        AffineTerm {
+                            var: VarId(1),
+                            coeff: 1.0,
+                        },
+                    ],
+                    constant: 0.0,
+                })],
+                vec![ScalarSetType::GreaterThan(1.0)],
+                None,
+            )
+            .unwrap();
+        model
+            .set_objective(
+                ScalarFunctionType::Affine(ScalarAffineFn {
+                    terms: vec![
+                        AffineTerm {
+                            var: VarId(0),
+                            coeff: 1.0,
+                        },
+                        AffineTerm {
+                            var: VarId(1),
+                            coeff: 2.0,
+                        },
+                    ],
+                    constant: 0.0,
+                }),
+                ModelSense::Minimize,
+            )
+            .unwrap();
+        model
+            .add_primal_start(PrimalStart::new(vec![VarId(1)], vec![1.0]).unwrap())
+            .unwrap();
+        model.optimize().unwrap();
+        assert_eq!(
+            model.get_var_values_range(0..2).unwrap(),
+            Some(vec![1.0, 0.0])
+        );
+    }
 
     #[test]
     fn native_rows_counts_solve_and_objective_replacement() {

@@ -131,6 +131,16 @@ pub trait ModelLike {
 }
 
 pub trait Optimizer: ModelLike {
+    /// Submit one (possibly partial) MIP primal start.
+    ///
+    /// Backends that support multiple starts define whether repeated calls
+    /// append or replace starts.  Unsupported backends retain the existing
+    /// source compatibility through this default implementation.
+    fn add_primal_start(&mut self, start: crate::PrimalStart) -> Result<(), MoiError> {
+        start.validate()?;
+        Err(MoiError::UnsupportedAttribute)
+    }
+
     fn optimize(&mut self) -> Result<SolveStatus, MoiError>;
     fn compute_conflict(&mut self) -> Result<(), MoiError>;
     fn get_var_value(&self, var_id: VarId) -> Result<Option<f64>, MoiError>;

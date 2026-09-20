@@ -49,6 +49,8 @@ pub type CoptSetColObj =
     unsafe extern "C" fn(*mut c_void, c_int, *const c_int, *const f64) -> c_int;
 pub type CoptSetObjConst = unsafe extern "C" fn(*mut c_void, f64) -> c_int;
 pub type CoptSetObjSense = unsafe extern "C" fn(*mut c_void, c_int) -> c_int;
+pub type CoptAddMipStart =
+    unsafe extern "C" fn(*mut c_void, c_int, *const c_int, *const f64) -> c_int;
 pub type CoptSetIntParam = unsafe extern "C" fn(*mut c_void, *const c_char, c_int) -> c_int;
 pub type CoptSetDblParam = unsafe extern "C" fn(*mut c_void, *const c_char, f64) -> c_int;
 pub type CoptGetIntAttr = unsafe extern "C" fn(*mut c_void, *const c_char, *mut c_int) -> c_int;
@@ -128,6 +130,7 @@ pub struct CoptApi {
     pub COPT_SetColObj: CoptSetColObj,
     pub COPT_SetObjConst: CoptSetObjConst,
     pub COPT_SetObjSense: CoptSetObjSense,
+    pub COPT_AddMipStart: CoptAddMipStart,
     pub COPT_SetIntParam: CoptSetIntParam,
     pub COPT_SetDblParam: CoptSetDblParam,
     pub COPT_GetIntAttr: CoptGetIntAttr,
@@ -184,6 +187,7 @@ impl CoptApi {
             COPT_SetColObj: load!("COPT_SetColObj", CoptSetColObj),
             COPT_SetObjConst: load!("COPT_SetObjConst", CoptSetObjConst),
             COPT_SetObjSense: load!("COPT_SetObjSense", CoptSetObjSense),
+            COPT_AddMipStart: load!("COPT_AddMipStart", CoptAddMipStart),
             COPT_SetIntParam: load!("COPT_SetIntParam", CoptSetIntParam),
             COPT_SetDblParam: load!("COPT_SetDblParam", CoptSetDblParam),
             COPT_GetIntAttr: load!("COPT_GetIntAttr", CoptGetIntAttr),

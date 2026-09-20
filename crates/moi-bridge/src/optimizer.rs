@@ -562,6 +562,35 @@ impl ModelLike for BridgeOptimizer {
 }
 
 impl Optimizer for BridgeOptimizer {
+    fn add_primal_start(&mut self, start: PrimalStart) -> Result<(), MoiError> {
+        start.validate()?;
+        if start.variable_ids.is_empty() {
+            return Ok(());
+        }
+        for variable in &start.variable_ids {
+            if variable.0 >= self.num_variables {
+                return Err(MoiError::InvalidVariableIndex(variable.0));
+            }
+        }
+        let backend = self.backend.as_mut().ok_or_else(|| {
+            MoiError::BackendState("MIP starts require an attached native backend".into())
+        })?;
+        if let Err(error) = backend.add_primal_start(start) {
+            // A capability/validation error leaves the attached native model
+            // usable. Only failures that may have partially reached it require
+            // detaching the backend, matching the Direct poison policy.
+            if matches!(
+                error,
+                MoiError::NativeSolver { .. } | MoiError::BackendProtocol(_) | MoiError::Msg(_)
+            ) {
+                self.detach_failed_backend();
+            }
+            return Err(error);
+        }
+        self.invalidate_solution();
+        Ok(())
+    }
+
     fn optimize(&mut self) -> Result<SolveStatus, MoiError> {
         self.invalidate_solution();
         match self.backend {
