@@ -2,7 +2,7 @@ use moi_core::{
     AttrValue, ConstrId, ModelSense, MoiError, OptimizerAttr, ScalarFunctionType, ScalarSetType,
     SolveStatus, VarId,
 };
-use moi_solver_api::{BoundType, NameType, Optimizer};
+use moi_solver_api::{BoundType, NameType, Optimizer, PrimalStart};
 use std::fmt;
 use std::sync::{Arc, Mutex, MutexGuard};
 
@@ -50,6 +50,10 @@ impl fmt::Debug for DirectModel {
 }
 
 impl DirectModel {
+    pub fn is_same_model(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.state, &other.state)
+    }
+
     pub fn add_linear_rows(&self, rows: moi_solver_api::LinearRows) -> Result<(), MoiError> {
         let mut state = self.lock()?;
         let count = rows.num_rows();
@@ -292,6 +296,23 @@ impl DirectModel {
         let mut state = self.lock()?;
         let result = Self::optimizer(&mut state)?.set_optimizer_attr(attr, value);
         Self::finish(&mut state, "set parameter", result)?;
+        Self::invalidate_solution(&mut state);
+        Ok(())
+    }
+
+    pub fn add_primal_start(&self, start: PrimalStart) -> Result<(), MoiError> {
+        start.validate()?;
+        if start.variable_ids.is_empty() {
+            return Ok(());
+        }
+        let mut state = self.lock()?;
+        for variable in &start.variable_ids {
+            if variable.0 >= state.num_variables {
+                return Err(MoiError::InvalidVariableIndex(variable.0));
+            }
+        }
+        let result = Self::optimizer(&mut state)?.add_primal_start(start);
+        Self::finish(&mut state, "add MIP start", result)?;
         Self::invalidate_solution(&mut state);
         Ok(())
     }

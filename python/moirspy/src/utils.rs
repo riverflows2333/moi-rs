@@ -14,6 +14,14 @@ pub enum ResultSource {
 }
 
 impl ResultSource {
+    pub fn is_same_model(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Cached(left), Self::Cached(right)) => Arc::ptr_eq(left, right),
+            (Self::Direct(left), Self::Direct(right)) => left.is_same_model(right),
+            _ => false,
+        }
+    }
+
     pub fn get_var_value(&self, id: VarId) -> PyResult<Option<f64>> {
         match self {
             Self::Cached(bridge) => lock_bridge(bridge)?

@@ -58,6 +58,13 @@ impl VariableIds {
             Self::Explicit(ids) => ids[index],
         }
     }
+
+    fn to_vec(&self) -> Vec<VarId> {
+        match self {
+            Self::Range { start, len } => (*start..*start + *len).map(VarId).collect(),
+            Self::Explicit(ids) => ids.clone(),
+        }
+    }
 }
 
 impl std::fmt::Debug for VariableIds {
@@ -71,6 +78,10 @@ impl std::fmt::Debug for VariableIds {
 impl Var {
     pub fn get_id(&self) -> VarId {
         self.id
+    }
+
+    pub(crate) fn result_source(&self) -> Option<&ResultSource> {
+        self.result_source.as_ref()
     }
 }
 
@@ -393,6 +404,12 @@ impl Vars {
             var_ids: ids.into(),
             result_source: None,
         }
+    }
+    pub(crate) fn ids(&self) -> Vec<VarId> {
+        self.var_ids.to_vec()
+    }
+    pub(crate) fn result_source(&self) -> Option<&ResultSource> {
+        self.result_source.as_ref()
     }
     pub fn set_bridge(&mut self, bridge: &SharedBridge) {
         self.result_source = Some(ResultSource::Cached(bridge.clone()));

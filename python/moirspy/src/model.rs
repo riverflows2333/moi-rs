@@ -14,6 +14,7 @@ use crate::utils::*;
 use crate::var::*;
 use moi_core::*;
 use moi_solver_api::*;
+use numpy::PyReadonlyArrayDyn;
 use pyo3::prelude::*;
 use pyo3::types::{PyAny, PyTuple};
 #[pyclass]
@@ -495,6 +496,29 @@ impl Model {
             ModelRuntime::Poisoned(state) => Err(poisoned_py_error(state)),
         }
     }
+
+    /// Submit one COPT-style MIP start.  Repeated calls append native starts
+    /// when the selected solver supports multiple starts.
+    #[pyo3(signature = (variables, values), name = "setMIPStart")]
+    fn set_mip_start(
+        &mut self,
+        variables: &Bound<'_, PyAny>,
+        values: &Bound<'_, PyAny>,
+    ) -> PyResult<()> {
+        let source = self.result_source_for("set MIP start")?;
+        let variable_ids = extract_mip_start_variables(variables, &source)?;
+        let values = extract_mip_start_values(values)?;
+        let start = PrimalStart::new(variable_ids, values).map_err(to_py_runtime_error)?;
+        match &self.runtime {
+            ModelRuntime::Cached(cached) => lock_bridge(cached.bridge())?
+                .add_primal_start(start)
+                .map_err(to_py_runtime_error),
+            ModelRuntime::Direct(direct) => {
+                direct.add_primal_start(start).map_err(to_py_runtime_error)
+            }
+            ModelRuntime::Poisoned(state) => Err(poisoned_py_error(state)),
+        }
+    }
     fn __str__(&self) -> PyResult<String> {
         Ok(format!("Model(name={})", self.name))
     }
@@ -511,6 +535,72 @@ impl Model {
             ModelRuntime::Poisoned(state) => Err(poisoned_py_error(state)),
         }
     }
+}
+
+impl Model {
+    fn result_source_for(&self, operation: &str) -> PyResult<ResultSource> {
+        match &self.runtime {
+            ModelRuntime::Cached(cached) => Ok(ResultSource::Cached(cached.bridge().clone())),
+            ModelRuntime::Direct(direct) => Ok(ResultSource::Direct(direct.clone())),
+            ModelRuntime::Poisoned(state) => {
+                Err(to_py_runtime_error(MoiError::BackendState(format!(
+                    "{operation} is unavailable after '{}': {}",
+                    state.operation, state.reason
+                ))))
+            }
+        }
+    }
+}
+
+fn extract_mip_start_variables(
+    variables: &Bound<'_, PyAny>,
+    expected_source: &ResultSource,
+) -> PyResult<Vec<VarId>> {
+    if let Ok(vars) = variables.extract::<PyRef<'_, Vars>>() {
+        validate_mip_start_source(vars.result_source(), expected_source)?;
+        return Ok(vars.ids());
+    }
+
+    let mut ids = Vec::new();
+    for item in variables.try_iter()? {
+        let item = item?;
+        let var = item.extract::<PyRef<'_, Var>>().map_err(|_| {
+            PyErr::new::<pyo3::exceptions::PyTypeError, _>(
+                "MIP start variables must be Vars or an iterable of Var objects",
+            )
+        })?;
+        validate_mip_start_source(var.result_source(), expected_source)?;
+        ids.push(var.get_id());
+    }
+    Ok(ids)
+}
+
+fn validate_mip_start_source(
+    source: Option<&ResultSource>,
+    expected_source: &ResultSource,
+) -> PyResult<()> {
+    if source.is_some_and(|source| source.is_same_model(expected_source)) {
+        Ok(())
+    } else {
+        Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+            "MIP start variables must have been created by this model",
+        ))
+    }
+}
+
+fn extract_mip_start_values(values: &Bound<'_, PyAny>) -> PyResult<Vec<f64>> {
+    if let Ok(array) = values.extract::<PyReadonlyArrayDyn<'_, f64>>() {
+        return Ok(array.as_array().iter().copied().collect());
+    }
+    let flattened = if values.hasattr("ravel")? {
+        values.call_method0("ravel")?
+    } else {
+        values.clone()
+    };
+    flattened
+        .try_iter()?
+        .map(|item| item?.extract::<f64>())
+        .collect()
 }
 
 fn poisoned_py_error(state: &crate::runtime::PoisonedState) -> PyErr {

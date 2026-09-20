@@ -3,6 +3,8 @@ import sys
 import unittest
 from pathlib import Path
 
+import numpy as np
+
 
 COPT_HOME = Path(os.environ.get("COPT_HOME", r"D:\env\copt80"))
 COPT_DLL = COPT_HOME / "bin" / "copt.dll"
@@ -46,6 +48,24 @@ class WindowsCoptModelTests(unittest.TestCase):
         self.assertEqual([round(x[i].X) for i in range(3)], [1, 0, 1])
         self.assertEqual(x.X.shape, (3,))
         self.assertEqual(x.X.round().astype(int).tolist(), [1, 0, 1])
+
+    def test_direct_mip_starts_accept_dense_and_partial_inputs(self):
+        model = Model("copt-direct-mip-start", backend="copt")
+        model.setParam("Logging", 0)
+        x = model.addVars(2, name="x", vtype=MOI.BINARY, lb=0.0, ub=1.0)
+        model.addConstr(x[0] + x[1] >= 1.0)
+        model.setObjective(x[0] + 2.0 * x[1], MOI.MINIMIZE)
+
+        # COPT's AddMipStart accepts a full start and sparse partial starts.
+        model.setMIPStart(x, np.array([1, 0], dtype=np.int64))
+        model.setMIPStart([x[1]], [1.0])
+        model.optimize()
+
+        self.assertEqual(x.X.round().astype(int).tolist(), [1, 0])
+        with self.assertRaisesRegex(ValueError, "MIP start has"):
+            model.setMIPStart(x, [1.0])
+        with self.assertRaisesRegex(ValueError, "finite"):
+            model.setMIPStart([x[0]], [float("nan")])
 
     def test_direct_binary_model_matches_cached_model(self):
         env = CoptEnv(str(COPT_DLL))

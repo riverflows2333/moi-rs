@@ -107,6 +107,12 @@ as low-level APIs and are not required by the built-in COPT path.
 - `CoptEnv(...)` and `CoptEnvConfig(...)` configure the built-in native COPT
   backend, including explicit library, license-directory, client, and OEM setup.
 - `Model.optimize()` solves the model; use `Model.ObjVal` and `Var.X` for results.
+- `Model.setMIPStart(variables, values)` submits one COPT MIP start. `variables`
+  may be a `Vars` collection or an iterable of its `Var` members; `values` may
+  be a NumPy array or iterable and is flattened in the same order. Partial
+  starts are supported. Repeated calls append native COPT starts. COPT 8.0.6's
+  C API exposes no matching remove operation, so `clearMIPStarts()` is not
+  exposed yet; rebuild the model when its submitted starts must be discarded.
 
 Available variable types are `MOI.CONTINUOUS`, `MOI.BINARY`, and `MOI.INTEGER`.
 In COPT Direct mode, `addConstrs` collects a validated sparse row batch and

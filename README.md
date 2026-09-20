@@ -193,6 +193,24 @@ For native COPT models this reads the solution vector cached by `optimize()`.
 For a contiguous Gurobi variable collection it uses one native attribute-array
 read. These properties return `None` when their result is unavailable.
 
+### COPT MIP starts
+
+The COPT backend supports sparse or dense MIP starts through a single bulk
+call. A `Vars` collection is flattened in row-major order; a variable sequence
+permits a partial, explicitly ordered start:
+
+```python
+import numpy as np
+
+model.setMIPStart(x, np.array([1, 0, 1]))
+model.setMIPStart([x[0], x[2]], [1.0, 1.0])
+```
+
+Values must be finite, each variable may occur only once per start, and all
+variables must belong to the model. Repeated calls append starts, matching
+`COPT_AddMipStart`. COPT 8.0.6 provides no native clear/remove operation, so a
+`clearMIPStarts()` Python method is intentionally not provided.
+
 ## Low-level Gurobi API
 
 Most users should work through `moirspy.Model`. The backend package also exposes
