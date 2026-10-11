@@ -1,4 +1,4 @@
-name: Build and Publish PyPI
+name: Build and Publish PyPI and GitHub Release
 
 on:
   push:
@@ -164,3 +164,43 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist
+
+  github-release:
+    name: Publish source to GitHub Release
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    needs: release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download source distributions
+        uses: actions/download-artifact@v4
+        with:
+          pattern: sdist-*
+          path: dist
+          merge-multiple: true
+
+      - name: Verify source distribution contents
+        run: python .github/scripts/audit_solver_artifact.py dist
+
+      - name: Create release with generated changelog and source archive
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          shopt -s nullglob
+          sources=(dist/*.tar.gz)
+          if [[ ${#sources[@]} -eq 0 ]]; then
+            echo "No source distributions found." >&2
+            exit 1
+          fi
+          # Keep reruns safe without replacing an existing release's notes.
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "${sources[@]}" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "${sources[@]}" \
+              --verify-tag --title "$GITHUB_REF_NAME" --generate-notes
+          fi
