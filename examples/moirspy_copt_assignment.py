@@ -14,8 +14,7 @@ from __future__ import annotations
 
 from math import isclose
 
-from moirspy import MOI, Model, quicksum
-from moirspy_copt import Env, EnvrConfig
+from moirspy import MOI, CoptEnv, CoptEnvConfig, Model, quicksum
 
 
 WORKERS = ("Alice", "Bob", "Carol", "Dave")
@@ -37,16 +36,15 @@ def main() -> None:
     num_workers = len(WORKERS)
     num_jobs = len(JOBS)
 
-    # EnvrConfig mirrors COPT's client configuration API. It can also hold
+    # CoptEnvConfig mirrors COPT's client configuration API. It can also hold
     # cluster, certificate, web-license, or externally supplied OEM settings.
-    config = EnvrConfig()
+    config = CoptEnvConfig()
     config.set("NoBanner", 1)
-    copt_env = Env(config=config)
-    model = Model("assignment-demo")
+    copt_env = CoptEnv(config=config)
 
-    # Attaching COPT before modeling forwards subsequent changes incrementally
-    # to the native backend and avoids replaying the completed model later.
-    model.setBackend("copt", env=copt_env)
+    # Direct mode uses the built-in native backend without a replayable cache.
+    # Only moirspy is needed; do not import environments from legacy packages.
+    model = Model("assignment-demo", backend="copt", env=copt_env)
     model.setParam("Logging", 0)
     model.setParam("Threads", 1)
 

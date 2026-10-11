@@ -13,16 +13,10 @@ select a backend, and optimize.
 > linear programs and mixed-integer linear programs (LP/MILP). API stability is
 > not yet guaranteed.
 
-## Python packages
+## Python installation
 
-| Package | Import name | Purpose |
-| --- | --- | --- |
-| [`moirspy`](https://pypi.org/project/moirspy/) | `moirspy` | Modeling API with built-in native COPT backend |
-| [`moirspy-gurobi`](https://pypi.org/project/moirspy-gurobi/) | `moirspy_gurobi` | Optional low-level/compatibility Gurobi API |
-| `moirspy-copt` | `moirspy_copt` | Optional low-level/compatibility COPT API |
-
-The packages require Python 3.8 or newer. The high-level COPT and Gurobi
-backends are both included in `moirspy`:
+[`moirspy`](https://pypi.org/project/moirspy/) requires Python 3.8 or newer.
+The native COPT and Gurobi backends are both included in this single package:
 
 ```bash
 python -m pip install moirspy
@@ -31,9 +25,7 @@ python -m pip install moirspy
 `moirspy` does not bundle either solver or a license. Install the selected solver
 separately and make sure its native library and license are available.
 
-The high-level COPT backend is installed with `python -m pip install moirspy`
-and discovers COPT through `COPT_HOME`. `moirspy-copt` remains optional for its
-low-level API. Neither backend bundles its solver or license.
+COPT discovery uses `COPT_HOME`; Gurobi discovery uses `GUROBI_HOME`.
 
 > **Important:** `GUROBI_HOME` must be set to the Gurobi installation directory
 > before creating the Gurobi backend. Without it, `setBackend("gurobi")` may be
@@ -102,11 +94,8 @@ not retain the replayable variable/constraint cache. The default
 must be built before choosing a solver.
 
 Both COPT and Gurobi workflows are native inside the main `moirspy` extension
-and make no calls through a Python solver object. The package-based Python
-transport remains behind the default `legacy-python-backend` Cargo feature for
-external backends during one compatibility cycle. The separate `moirspy_copt` and
-`moirspy_gurobi` packages continue to expose their low-level APIs; no import path
-is removed in this release.
+and make no calls through a Python solver object. Import models and explicit
+solver environments directly from `moirspy`.
 
 ## Modeling API
 
@@ -267,25 +256,27 @@ variables must belong to the model. Repeated calls append starts, matching
 `COPT_AddMipStart`. COPT 8.0.6 provides no native clear/remove operation, so a
 `clearMIPStarts()` Python method is intentionally not provided.
 
-## Low-level Gurobi API
+## Native Gurobi Direct example
 
-Most users should work through `moirspy.Model`. The backend package also exposes
-a low-level API for integrations and backend development:
+Both the model and its optional environment come from the core `moirspy`
+package. No separate Python backend package is required:
 
 ```python
-from moirspy_gurobi import Model
+from moirspy import MOI, GurobiEnv, Model
 
-backend = Model(name="direct", dll_path=None)
-x = backend.add_variable(name="x", vtype="C", lb=0.0, ub=float("inf"))
-backend.set_objective([x], [1.0], 0.0, 0)  # 1=maximize; other values=minimize
-backend.update()
-status = backend.optimize()
-print(status, backend.get_var_value(x))
+env = GurobiEnv()
+env.setParam("OutputFlag", 0)
+model = Model("direct", backend="gurobi", env=env)
+x = model.addVar(name="x", lb=0.0, ub=2.0)
+model.addConstr(x >= 1.0)
+model.setObjective(x, MOI.MINIMIZE)
+model.optimize()
+print(model.ObjVal, x.X)
 ```
 
-At this level, variables and constraints are represented by integer IDs and
-linear functions by parallel variable/coefficient arrays. Constraint senses are
-`"<"`, `">"`, or `"="`.
+When no environment configuration is needed, simply use
+`Model("direct", backend="gurobi")`. Gurobi itself and its license must still
+be installed separately.
 
 ## Rust workspace
 
@@ -297,7 +288,7 @@ The main crates are organized by layer:
 - `moi-bridge`: solver-independent model storage and backend synchronization
 - `moi-solver-gurobi`: dynamic Gurobi loading and native solver wrapper
 - `moi-solver-copt`: dynamic COPT loading and native solver wrapper
-- `moirspy` / `moirspy-gurobi` / `moirspy-copt`: PyO3 extension modules
+- `moirspy`: Python modeling API and built-in native backends via PyO3
 
 Build and test the Rust workspace:
 
@@ -306,19 +297,13 @@ cargo build --workspace
 cargo test --workspace
 ```
 
-Build either Python extension from its package directory with
+Build the Python extension from its package directory with
 [`maturin`](https://www.maturin.rs/):
 
 ```bash
 python -m pip install maturin
 
 cd python/moirspy
-maturin develop
-
-cd ../moirspy-gurobi
-maturin develop
-
-cd ../moirspy-copt
 maturin develop
 ```
 

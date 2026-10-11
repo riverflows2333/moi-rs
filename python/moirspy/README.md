@@ -3,7 +3,7 @@
 `moirspy` is a solver-independent Python optimization-modeling API implemented
 in Rust. It currently supports linear and mixed-integer linear models (LP/MILP)
 through variables, affine expressions, constraints, objectives, parameters, and
-pluggable solver backends.
+built-in native COPT and Gurobi backends.
 
 > The project is under active development and its API is not yet stable.
 
@@ -64,9 +64,9 @@ print("x:", [x[i].X for i in range(3)])
 ```
 
 The COPT and Gurobi backends are built into `moirspy` and call their native Rust
-optimizers without importing solver packages. The separate packages remain
-available as low-level compatibility APIs. The bridge synchronizes existing
-model data when a backend is attached.
+optimizers without importing solver packages. Import models and explicit solver
+environments directly from `moirspy`. The bridge synchronizes existing model
+data when a backend is attached.
 
 ## Backend execution modes
 
@@ -75,14 +75,6 @@ model data when a backend is attached.
 | COPT Direct | `Model(name, backend="copt")` | Minimal counts and native state | None |
 | COPT Cached attach | `Model(name)` then `setBackend("copt")` | Released after attach unless `keep_cache=True` | None |
 | Gurobi Direct/Cached | `backend="gurobi"` or `setBackend("gurobi")` | Same Direct/Cached policy | None |
-| Legacy package | third-party `moirspy_<name>` backend | Controlled by `keep_cache` | Compatibility `PyBackend` |
-
-The legacy transport is compiled by the `legacy-python-backend` Cargo feature
-for one compatibility cycle. It is enabled in published wheels while third-party
-packages still depend on it. Source builds that only require built-in backends
-can use `--no-default-features`; unknown/package backends then fail with an
-explicit error. `moirspy_copt.Model` and `moirspy_gurobi.Model` remain supported
-as low-level APIs and are not required by the built-in COPT path.
 
 ## Main API
 
