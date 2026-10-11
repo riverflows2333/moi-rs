@@ -29,6 +29,28 @@ except ImportError:
     "requires the Windows COPT 8 runtime and built Python extensions",
 )
 class WindowsCoptModelTests(unittest.TestCase):
+    def test_division_in_constraints_and_objective(self):
+        for direct in (True, False):
+            with self.subTest(direct=direct):
+                model = Model("division", backend="copt") if direct else Model("division")
+                x = model.addVars(2, ub=10)
+                expr = x[0] + 2 * x[1] + 4
+                model.addConstr(x[0] / 2 >= 2)
+                model.addConstr(expr / -2 <= -6)
+                model.addConstr(x[0] / 2 + x[1] / 4 <= 4)
+                model.setObjective((2 * x[0] + x[1] + 6) / 2, MOI.MINIMIZE)
+                if not direct:
+                    model.setBackend("copt")
+                model.setParam("Logging", 0)
+                model.optimize()
+                self.assertAlmostEqual(x[0].X, 4)
+                self.assertAlmostEqual(x[1].X, 2)
+                self.assertAlmostEqual(model.ObjVal, 8)
+                # Division constructs a new expression without altering the numerator.
+                model.setObjective(expr, MOI.MINIMIZE)
+                model.optimize()
+                self.assertAlmostEqual(model.ObjVal, 12)
+
     def new_model(self, name):
         model = Model(name)
         model.setParam("Logging", 0)

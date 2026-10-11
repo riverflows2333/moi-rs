@@ -1,5 +1,5 @@
 use crate::constr::*;
-use crate::utils::{ensure_finite, operand_type_error};
+use crate::utils::{division_denominator, ensure_finite, operand_type_error};
 use crate::var::Var;
 use moi_core::*;
 use pyo3::prelude::*;
@@ -31,6 +31,17 @@ impl Default for LinExpr {
 
 #[pymethods]
 impl LinExpr {
+    fn __truediv__(&self, other: &Bound<'_, PyAny>) -> PyResult<LinExpr> {
+        let denominator = division_denominator(other)?;
+        let mut afn = self.f.clone();
+        // Divide directly: 1 / denominator can overflow even when each quotient is finite.
+        afn.constant = ensure_finite(afn.constant / denominator, "division result constant")?;
+        for term in &mut afn.terms {
+            term.coeff = ensure_finite(term.coeff / denominator, "division result coefficient")?;
+        }
+        Ok(LinExpr::new(afn))
+    }
+
     fn __add__(&self, _other: &Bound<'_, PyAny>) -> PyResult<LinExpr> {
         let mut afn = self.f.clone();
         // 判断右侧项类型，为浮点数、变量或线性表达式

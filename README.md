@@ -181,6 +181,19 @@ model.setObjective(total, MOI.MINIMIZE)
 Quadratic and nonlinear products such as `x[0, 0] * x[1, 2]` are not supported
 yet.
 
+Variables and linear expressions support division by finite nonzero numbers:
+
+```python
+model.addConstr(x[0, 0] / 2 + x[1, 2] / 0.9 <= 10)
+model.addConstr((2 * x[0, 0] + 4) / -2 >= -8)
+```
+
+Division scales every coefficient and the constant, returning a new linear
+expression that can also be used in an objective. Zero raises
+`ZeroDivisionError`; nonfinite denominators or overflowing results raise
+`ValueError`. A variable or expression as the denominator (including `1 / x`)
+is nonlinear and raises `TypeError`.
+
 ### Parameters and solution values
 
 `setParam(name, value)` accepts a Boolean, integer, float, or string. With the

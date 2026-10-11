@@ -7,6 +7,33 @@ from moirspy import MOI, Model, Var, dot, quicksum
 
 
 class TestPythonInputValidation(TestCase):
+    def test_division_validates_denominators_and_results(self):
+        x = Var(0)
+        expr = 2 * x + 4
+        for numerator in (x, expr):
+            for zero in (0, 0.0, -0.0):
+                with self.assertRaises(ZeroDivisionError):
+                    _ = numerator / zero
+            for nonfinite in (math.nan, math.inf, -math.inf):
+                with self.assertRaises(ValueError):
+                    _ = numerator / nonfinite
+            for denominator in (x, expr, object(), "2", None):
+                with self.assertRaises(TypeError):
+                    _ = numerator / denominator
+            with self.assertRaises(ValueError):
+                _ = numerator / 1e-320
+        with self.assertRaises(TypeError):
+            _ = 1 / x
+        with self.assertRaises(TypeError):
+            _ = 1 / expr
+        # Small coefficients may have finite quotients even when the reciprocal overflows.
+        model = Model("small-division")
+        tiny = model.addVar()
+        model.addConstr((1e-320 * tiny) / 1e-320 <= 2)
+        model.addConstr((0 * tiny + 1e308) / 1e308 == 1)
+        with self.assertRaises(ValueError):
+            _ = (0 * tiny + 1e308) / 0.1
+
     def test_invalid_expression_operands_raise_python_errors(self):
         x = Var(0)
         expr = x + 1.0

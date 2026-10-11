@@ -97,6 +97,9 @@ as low-level APIs and are not required by the built-in COPT path.
 - `Model.addConstr(...)` and `Model.addConstrs(...)` add linear comparisons.
 - `quicksum(...)` sums any iterable of variables, linear expressions, or numbers.
 - `dot(coefficients, variables)` constructs a weighted affine expression directly.
+- `Var / number` and `LinExpr / number` return linear expressions with divided
+  coefficients and constants. The denominator must be finite and nonzero;
+  division by a variable or expression is unsupported.
 - `Model.setObjective(expr, MOI.MINIMIZE | MOI.MAXIMIZE)` sets the objective.
 - `Model.setParam(name, value)` stores a solver parameter.
 - `Model.setBackend("gurobi", env=None, keep_cache=False)` or the COPT equivalent

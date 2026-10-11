@@ -111,6 +111,19 @@ pub fn ensure_finite(value: f64, field: &str) -> PyResult<f64> {
     }
 }
 
+pub fn division_denominator(other: &Bound<'_, PyAny>) -> PyResult<f64> {
+    let value = other
+        .extract::<f64>()
+        .map_err(|_| operand_type_error("linear expression division", "a finite nonzero number"))?;
+    let value = ensure_finite(value, "division denominator")?;
+    if value == 0.0 {
+        return Err(pyo3::exceptions::PyZeroDivisionError::new_err(
+            "linear expression division by zero",
+        ));
+    }
+    Ok(value)
+}
+
 pub fn operand_type_error(operation: &str, expected: &str) -> PyErr {
     PyErr::new::<pyo3::exceptions::PyTypeError, _>(format!(
         "unsupported operand for {operation}; expected {expected}"

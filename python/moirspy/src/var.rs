@@ -223,6 +223,14 @@ impl Var {
         Ok(LinExpr::new(afn))
     }
 
+    fn __truediv__(&self, other: &Bound<'_, PyAny>) -> PyResult<LinExpr> {
+        let denominator = division_denominator(other)?;
+        let coefficient = ensure_finite(1.0 / denominator, "division result coefficient")?;
+        let mut afn = ScalarAffineFn::with_capacity(1);
+        afn.push_term(self.id, coefficient);
+        Ok(LinExpr::new(afn))
+    }
+
     fn __rmul__(&self, _other: &Bound<'_, PyAny>) -> PyResult<LinExpr> {
         let mut afn = ScalarAffineFn::new();
         // 判断左侧项类型，为浮点数
