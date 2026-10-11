@@ -178,6 +178,31 @@ total = quicksum(x[i, j] for i in range(2) for j in range(3))
 model.setObjective(total, MOI.MINIMIZE)
 ```
 
+`Vars.sum()` builds a linear expression directly in Rust. Index patterns use
+integers for exact matches and `"*"` for any index in one dimension, following
+[Gurobi tupledict.sum](https://docs.gurobi.com/projects/optimizer/en/current/reference/python/tupledict.html#tupledict.sum)
+and [COPT tupledict.sum](https://guide.coap.online/copt/en-doc/pyapiref.html).
+These are index filters, not regular expressions. Specify one pattern per
+dimension; no matching indices returns a zero linear expression.
+
+```python
+x = model.addVars(2, 3)
+total = x.sum()          # all six variables, one LinExpr
+row = x.sum(1, "*")     # x[1, 0] + x[1, 1] + x[1, 2]
+column = x.sum("*", 2)  # x[0, 2] + x[1, 2]
+
+columns = x.sum(dim=0)   # object ndarray of LinExpr, shape (3,)
+rows = x.sum(dim=1)      # object ndarray of LinExpr, shape (2,)
+model.addConstrs(columns[j] <= 10 for j in range(3))
+```
+
+`dim` defaults to `None` (sum all variables), accepts negative dimension numbers,
+and removes the selected dimension. Reducing a one-dimensional collection returns
+one `LinExpr`. Index patterns and `dim` cannot be combined. Expression arrays
+are indexed or iterated when adding constraints; vectorized comparisons are not
+provided. Pattern summation visits only the selected slice without creating
+individual Python `Var` objects.
+
 Quadratic and nonlinear products such as `x[0, 0] * x[1, 2]` are not supported
 yet.
 

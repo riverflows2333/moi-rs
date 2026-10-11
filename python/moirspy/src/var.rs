@@ -5,6 +5,7 @@ use moi_core::*;
 use moi_solver_api::VariableBound;
 use numpy::{PyArray1, PyArrayDyn, PyArrayMethods, ndarray::IxDyn};
 use pyo3::prelude::*;
+use pyo3::types::PyTuple;
 
 #[pyclass(from_py_object)]
 #[derive(Clone)]
@@ -322,6 +323,101 @@ impl Var {
 
 #[pymethods]
 impl Vars {
+    #[pyo3(signature = (*pattern, dim=None))]
+    fn sum(
+        &self,
+        py: Python<'_>,
+        pattern: &Bound<'_, PyTuple>,
+        dim: Option<isize>,
+    ) -> PyResult<Py<PyAny>> {
+        if let Some(dim) = dim {
+            if !pattern.is_empty() {
+                return Err(pyo3::exceptions::PyTypeError::new_err(
+                    "sum accepts either index patterns or dim, not both",
+                ));
+            }
+            let ndim = self.shape.len() as isize;
+            let axis = if dim < 0 { dim + ndim } else { dim };
+            if axis < 0 || axis >= ndim {
+                return Err(pyo3::exceptions::PyIndexError::new_err(
+                    "sum dimension out of bounds",
+                ));
+            }
+            let axis = axis as usize;
+            let axis_len = self.shape[axis];
+            let inner: usize = self.shape[axis + 1..].iter().product();
+            let outer: usize = self.shape[..axis].iter().product();
+            let mut shape = self.shape.clone();
+            shape.remove(axis);
+            let mut expressions = Vec::with_capacity(outer * inner);
+            for i in 0..outer {
+                for j in 0..inner {
+                    let expr = self
+                        .sum_flat_indices((0..axis_len).map(|k| (i * axis_len + k) * inner + j));
+                    expressions.push(Py::new(py, expr)?.into_any());
+                }
+            }
+            if shape.is_empty() {
+                return Ok(expressions.pop().expect("positive variable dimensions"));
+            }
+            return Ok(PyArray1::from_vec(py, expressions)
+                .reshape(IxDyn(&shape))?
+                .into_any()
+                .unbind());
+        }
+        if pattern.is_empty() {
+            return Ok(Py::new(py, self.sum_flat_indices(0..self.var_ids.len()))?.into_any());
+        }
+        if pattern.len() != self.shape.len() {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                "sum requires one index or '*' per dimension",
+            ));
+        }
+        let mut fixed = Vec::with_capacity(self.shape.len());
+        let mut count = 1usize;
+        let mut matched = true;
+        for (item, &size) in pattern.iter().zip(&self.shape) {
+            if let Ok(text) = item.extract::<String>() {
+                if text != "*" {
+                    return Err(pyo3::exceptions::PyValueError::new_err(
+                        "sum supports only '*' as a wildcard; regular expressions are not supported",
+                    ));
+                }
+                fixed.push(None);
+                count *= size;
+            } else {
+                let index = item.extract::<isize>().map_err(|_| {
+                    pyo3::exceptions::PyTypeError::new_err("sum patterns must be integers or '*'")
+                })?;
+                matched &= index >= 0 && (index as usize) < size;
+                fixed.push(Some(index as usize));
+            }
+        }
+        if !matched {
+            return Ok(Py::new(py, LinExpr::default())?.into_any());
+        }
+        // Enumerate only the matching Cartesian slice, without scanning all variables
+        // or creating Python Var objects for its members.
+        let indices = (0..count).map(|mut item| {
+            let mut flat = 0;
+            let mut stride = 1;
+            for (&size, index) in self.shape.iter().zip(&fixed).rev() {
+                let coordinate = match index {
+                    Some(index) => *index,
+                    None => {
+                        let coordinate = item % size;
+                        item /= size;
+                        coordinate
+                    }
+                };
+                flat += coordinate * stride;
+                stride *= size;
+            }
+            flat
+        });
+        Ok(Py::new(py, self.sum_flat_indices(indices))?.into_any())
+    }
+
     #[new]
     fn new_py(shape: Vec<usize>, ids: Vec<usize>) -> PyResult<Self> {
         let expected = validate_shape(&shape)?;
@@ -437,6 +533,18 @@ impl Var {
 }
 
 impl Vars {
+    fn sum_flat_indices(&self, indices: impl ExactSizeIterator<Item = usize>) -> LinExpr {
+        let mut function = ScalarAffineFn::with_capacity(indices.len());
+        for index in indices {
+            function.push_term(self.var_ids.get(index), 1.0);
+        }
+        // Explicit collections may contain repeated or unordered variable IDs.
+        if matches!(self.var_ids, VariableIds::Explicit(_)) {
+            function.simplify();
+        }
+        LinExpr::new(function)
+    }
+
     pub fn new(shape: Vec<usize>, ids: Vec<VarId>) -> Self {
         Vars {
             shape,

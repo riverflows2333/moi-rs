@@ -29,6 +29,24 @@ except ImportError:
     "requires the Windows COPT 8 runtime and built Python extensions",
 )
 class WindowsCoptModelTests(unittest.TestCase):
+    def test_sum_patterns_and_dimension_reductions_solve(self):
+        for direct in (True, False):
+            with self.subTest(direct=direct):
+                model = Model("sums", backend="copt") if direct else Model("sums")
+                x = model.addVars(2, 3, lb=[1, 2, 3, 4, 5, 6], ub=[1, 2, 3, 4, 5, 6])
+                columns = x.sum(dim=0)
+                rows = x.sum(dim=1)
+                model.addConstrs(columns[j] == [5, 7, 9][j] for j in range(3))
+                model.addConstrs(rows[i] == [6, 15][i] for i in range(2))
+                model.addConstr(x.sum("*", 1) == 7)
+                model.addConstr(x.sum(1, "*") == 15)
+                model.setObjective(x.sum(), MOI.MINIMIZE)
+                if not direct:
+                    model.setBackend("copt")
+                model.setParam("Logging", 0)
+                model.optimize()
+                self.assertAlmostEqual(model.ObjVal, 21)
+
     def test_division_in_constraints_and_objective(self):
         for direct in (True, False):
             with self.subTest(direct=direct):

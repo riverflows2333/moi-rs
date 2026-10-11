@@ -96,6 +96,13 @@ as low-level APIs and are not required by the built-in COPT path.
   bounds, types, and names are broadcast; lists provide per-variable values.
 - `Model.addConstr(...)` and `Model.addConstrs(...)` add linear comparisons.
 - `quicksum(...)` sums any iterable of variables, linear expressions, or numbers.
+- `Vars.sum()` sums every variable; `Vars.sum(i, "*")` and
+  `Vars.sum("*", j)` sum matching integer index slices. `"*"` matches any
+  index in one dimension; it is not a regular expression. No match yields a
+  zero `LinExpr`. `Vars.sum(dim=0)` reduces that dimension and returns a NumPy
+  object array of `LinExpr` with the remaining shape (a single `LinExpr` for
+  one-dimensional Vars). The default `dim=None` sums all variables; patterns
+  cannot be combined with `dim`.
 - `dot(coefficients, variables)` constructs a weighted affine expression directly.
 - `Var / number` and `LinExpr / number` return linear expressions with divided
   coefficients and constants. The denominator must be finite and nonzero;
