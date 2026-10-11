@@ -1,7 +1,7 @@
 use moi_bridge::BridgeOptimizer;
 use moi_core::MoiError;
 use moi_core::VarId;
-use moi_solver_api::Optimizer;
+use moi_solver_api::{ModelLike, Optimizer, VariableBound};
 use pyo3::prelude::*;
 use std::sync::MutexGuard;
 use std::sync::{Arc, Mutex};
@@ -14,6 +14,26 @@ pub enum ResultSource {
 }
 
 impl ResultSource {
+    pub fn get_var_bound(&self, id: VarId, bound: VariableBound) -> PyResult<f64> {
+        match self {
+            Self::Cached(bridge) => lock_bridge(bridge)?
+                .get_var_bound(id, bound)
+                .map_err(to_py_runtime_error),
+            Self::Direct(model) => model.get_var_bound(id, bound).map_err(to_py_runtime_error),
+        }
+    }
+
+    pub fn set_var_bound(&self, id: VarId, bound: VariableBound, value: f64) -> PyResult<()> {
+        match self {
+            Self::Cached(bridge) => lock_bridge(bridge)?
+                .set_var_bound(id, bound, value)
+                .map_err(to_py_runtime_error),
+            Self::Direct(model) => model
+                .set_var_bound(id, bound, value)
+                .map_err(to_py_runtime_error),
+        }
+    }
+
     pub fn is_same_model(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::Cached(left), Self::Cached(right)) => Arc::ptr_eq(left, right),

@@ -2,6 +2,7 @@ use crate::constr::Constr;
 use crate::expr::LinExpr;
 use crate::utils::*;
 use moi_core::*;
+use moi_solver_api::VariableBound;
 use numpy::{PyArray1, PyArrayDyn, PyArrayMethods, ndarray::IxDyn};
 use pyo3::prelude::*;
 
@@ -80,6 +81,12 @@ impl Var {
         self.id
     }
 
+    fn model_source(&self) -> PyResult<&ResultSource> {
+        self.result_source.as_ref().ok_or_else(|| {
+            pyo3::exceptions::PyRuntimeError::new_err("variable is not associated with a model")
+        })
+    }
+
     pub(crate) fn result_source(&self) -> Option<&ResultSource> {
         self.result_source.as_ref()
     }
@@ -87,6 +94,30 @@ impl Var {
 
 #[pymethods]
 impl Var {
+    #[getter]
+    fn lb(&self) -> PyResult<f64> {
+        self.model_source()?
+            .get_var_bound(self.id, VariableBound::Lower)
+    }
+
+    #[setter(lb)]
+    fn set_lb(&self, value: f64) -> PyResult<()> {
+        self.model_source()?
+            .set_var_bound(self.id, VariableBound::Lower, value)
+    }
+
+    #[getter]
+    fn ub(&self) -> PyResult<f64> {
+        self.model_source()?
+            .get_var_bound(self.id, VariableBound::Upper)
+    }
+
+    #[setter(ub)]
+    fn set_ub(&self, value: f64) -> PyResult<()> {
+        self.model_source()?
+            .set_var_bound(self.id, VariableBound::Upper, value)
+    }
+
     #[new]
     pub fn new(id: usize) -> Self {
         //NOTE: 用于Model当中添加变量方法，一般不会单独实例化变量

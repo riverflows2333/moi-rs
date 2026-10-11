@@ -265,6 +265,57 @@ impl Default for BridgeOptimizer {
 }
 
 impl ModelLike for BridgeOptimizer {
+    fn get_var_bound(&mut self, id: VarId, bound: VariableBound) -> Result<f64, MoiError> {
+        if id.0 >= self.num_variables {
+            return Err(MoiError::InvalidVariableIndex(id.0));
+        }
+        if let Some(backend) = self.backend.as_mut() {
+            return backend.get_var_bound(id, bound);
+        }
+        let var = self
+            .vars
+            .get(id.0)
+            .ok_or_else(|| MoiError::BackendState("variable cache is unavailable".into()))?;
+        Ok(match bound {
+            VariableBound::Lower => var.lb,
+            VariableBound::Upper => var.ub,
+        })
+    }
+
+    fn set_var_bound(
+        &mut self,
+        id: VarId,
+        bound: VariableBound,
+        value: f64,
+    ) -> Result<(), MoiError> {
+        bound.validate(value)?;
+        if id.0 >= self.num_variables {
+            return Err(MoiError::InvalidVariableIndex(id.0));
+        }
+        if self.backend.is_none() {
+            bound.validate_pair(value, self.get_var_bound(id, bound.opposite())?)?;
+        }
+        if let Some(backend) = self.backend.as_mut() {
+            if let Err(error) = backend.set_var_bound(id, bound, value) {
+                if matches!(
+                    error,
+                    MoiError::NativeSolver { .. } | MoiError::BackendProtocol(_) | MoiError::Msg(_)
+                ) {
+                    self.detach_failed_backend();
+                }
+                return Err(error);
+            }
+        }
+        if self.cache_retained {
+            match bound {
+                VariableBound::Lower => self.vars[id.0].lb = value,
+                VariableBound::Upper => self.vars[id.0].ub = value,
+            }
+        }
+        self.invalidate_solution();
+        Ok(())
+    }
+
     fn add_variables(
         &mut self,
         n: usize,

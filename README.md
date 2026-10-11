@@ -138,6 +138,24 @@ Available variable types are `MOI.CONTINUOUS`, `MOI.BINARY`, and `MOI.INTEGER`.
 The `obj` arguments on `addVar` and `addVars` are currently reserved; use
 `setObjective` to define the objective.
 
+Individual variables expose writable `lb` and `ub` properties:
+
+```python
+print(x[0, 0].lb, x[0, 0].ub)
+x[0, 0].lb = 2.0
+x[0, 0].ub = 5.0
+model.optimize()
+```
+
+Bounds are read from the native COPT/Gurobi model after backend selection, or
+from the Cached model before selection. Changes are visible through all handles
+of the same variable and invalidate previous solution values. Reading bounds
+does not invalidate results. NaN and `lb > ub` are rejected before writing;
+`-float("inf")` and `float("inf")` represent unbounded sides. When changing
+both bounds, widen the interval first if needed. A standalone `Var(id)` without
+a model cannot read or modify bounds. Backends without bound support raise
+`NotImplementedError`.
+
 ### Linear expressions and constraints
 
 `Var` and `LinExpr` support addition, subtraction, scalar multiplication, and

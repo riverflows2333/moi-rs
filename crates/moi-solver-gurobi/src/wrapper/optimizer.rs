@@ -194,6 +194,67 @@ impl GurobiOptimizer {
 }
 
 impl ModelLike for GurobiOptimizer {
+    fn get_var_bound(&mut self, id: VarId, bound: VariableBound) -> Result<f64, MoiError> {
+        if id.0 >= self.num_vars {
+            return Err(MoiError::InvalidVariableIndex(id.0));
+        }
+        let index = c_int::try_from(id.0).map_err(|_| MoiError::InvalidVariableIndex(id.0))?;
+        let name = match bound {
+            VariableBound::Lower => GRB_DBL_ATTR_LB,
+            VariableBound::Upper => GRB_DBL_ATTR_UB,
+        };
+        // Flush pending columns and bound edits without invalidating a valid result.
+        Self::check(
+            unsafe { (self.api.GRBupdatemodel)(self.model) },
+            "GRBupdatemodel(bounds)",
+        )?;
+        let mut value = 0.0;
+        Self::check(
+            unsafe {
+                (self.api.GRBgetdblattrelement)(self.model, name.as_ptr().cast(), index, &mut value)
+            },
+            "GRBgetdblattrelement(bound)",
+        )?;
+        Ok(if value >= GRB_INFINITY {
+            f64::INFINITY
+        } else if value <= -GRB_INFINITY {
+            f64::NEG_INFINITY
+        } else {
+            value
+        })
+    }
+
+    fn set_var_bound(
+        &mut self,
+        id: VarId,
+        bound: VariableBound,
+        value: f64,
+    ) -> Result<(), MoiError> {
+        bound.validate(value)?;
+        if id.0 >= self.num_vars {
+            return Err(MoiError::InvalidVariableIndex(id.0));
+        }
+        let index = c_int::try_from(id.0).map_err(|_| MoiError::InvalidVariableIndex(id.0))?;
+        let name = match bound {
+            VariableBound::Lower => GRB_DBL_ATTR_LB,
+            VariableBound::Upper => GRB_DBL_ATTR_UB,
+        };
+        bound.validate_pair(value, self.get_var_bound(id, bound.opposite())?)?;
+        Self::check(
+            unsafe {
+                (self.api.GRBsetdblattrelement)(
+                    self.model,
+                    name.as_ptr().cast(),
+                    index,
+                    value.clamp(-GRB_INFINITY, GRB_INFINITY),
+                )
+            },
+            "GRBsetdblattrelement(bound)",
+        )?;
+        self.invalidate_solution();
+        Ok(())
+    }
+
     fn add_linear_rows(&mut self, rows: LinearRows) -> Result<std::ops::Range<usize>, MoiError> {
         rows.validate()?;
         if rows.num_cols != self.num_vars {

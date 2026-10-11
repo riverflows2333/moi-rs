@@ -3,7 +3,7 @@ use moi_core::{
     ScalarFunctionType, ScalarSetType, SolveStatus, VarId, VarInfo,
 };
 use moi_solver_api::{
-    BoundType, ModelLike, NameType, Optimizer, ensure_len, scalar_function_to_linear,
+    BoundType, ModelLike, NameType, Optimizer, VariableBound, ensure_len, scalar_function_to_linear,
 };
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -273,6 +273,43 @@ impl Default for DummyModel {
 }
 
 impl ModelLike for DummyModel {
+    fn get_var_bound(&mut self, id: VarId, bound: VariableBound) -> Result<f64, MoiError> {
+        let state = self.handle.lock()?;
+        let var = state
+            .variables
+            .get(id.0)
+            .ok_or(MoiError::InvalidVariableIndex(id.0))?;
+        Ok(match bound {
+            VariableBound::Lower => var.lb,
+            VariableBound::Upper => var.ub,
+        })
+    }
+
+    fn set_var_bound(
+        &mut self,
+        id: VarId,
+        bound: VariableBound,
+        value: f64,
+    ) -> Result<(), MoiError> {
+        let mut state = self.handle.lock()?;
+        let var = state
+            .variables
+            .get_mut(id.0)
+            .ok_or(MoiError::InvalidVariableIndex(id.0))?;
+        match bound {
+            VariableBound::Lower => {
+                bound.validate_pair(value, var.ub)?;
+                var.lb = value;
+            }
+            VariableBound::Upper => {
+                bound.validate_pair(value, var.lb)?;
+                var.ub = value;
+            }
+        }
+        Self::invalidate_solution(&mut state);
+        Ok(())
+    }
+
     fn add_variables(
         &mut self,
         n: usize,

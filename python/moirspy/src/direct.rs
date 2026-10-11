@@ -2,7 +2,7 @@ use moi_core::{
     AttrValue, ConstrId, ModelSense, MoiError, OptimizerAttr, ScalarFunctionType, ScalarSetType,
     SolveStatus, VarId,
 };
-use moi_solver_api::{BoundType, NameType, Optimizer, PrimalStart};
+use moi_solver_api::{BoundType, NameType, Optimizer, PrimalStart, VariableBound};
 use std::fmt;
 use std::sync::{Arc, Mutex, MutexGuard};
 
@@ -50,6 +50,24 @@ impl fmt::Debug for DirectModel {
 }
 
 impl DirectModel {
+    pub fn get_var_bound(&self, id: VarId, bound: VariableBound) -> Result<f64, MoiError> {
+        let mut state = self.lock()?;
+        Self::optimizer(&mut state)?.get_var_bound(id, bound)
+    }
+
+    pub fn set_var_bound(
+        &self,
+        id: VarId,
+        bound: VariableBound,
+        value: f64,
+    ) -> Result<(), MoiError> {
+        let mut state = self.lock()?;
+        let result = Self::optimizer(&mut state)?.set_var_bound(id, bound, value);
+        Self::finish(&mut state, "set variable bound", result)?;
+        Self::invalidate_solution(&mut state);
+        Ok(())
+    }
+
     pub fn is_same_model(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.state, &other.state)
     }

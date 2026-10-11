@@ -141,6 +141,53 @@ impl CoptOptimizer {
 }
 
 impl ModelLike for CoptOptimizer {
+    fn get_var_bound(&mut self, id: VarId, bound: VariableBound) -> Result<f64, MoiError> {
+        if id.0 >= self.num_vars {
+            return Err(MoiError::InvalidVariableIndex(id.0));
+        }
+        let index = checked_c_int(id.0, "variable index")?;
+        let name = match bound {
+            VariableBound::Lower => bindings::COPT_DBLINFO_LB,
+            VariableBound::Upper => bindings::COPT_DBLINFO_UB,
+        };
+        let mut value = 0.0;
+        self.check(
+            unsafe {
+                (self.api.COPT_GetColInfo)(self.prob, name.as_ptr().cast(), 1, &index, &mut value)
+            },
+            "COPT_GetColInfo(bound)",
+        )?;
+        Ok(if value >= bindings::COPT_INFINITY {
+            f64::INFINITY
+        } else if value <= -bindings::COPT_INFINITY {
+            f64::NEG_INFINITY
+        } else {
+            value
+        })
+    }
+
+    fn set_var_bound(
+        &mut self,
+        id: VarId,
+        bound: VariableBound,
+        value: f64,
+    ) -> Result<(), MoiError> {
+        bound.validate(value)?;
+        if id.0 >= self.num_vars {
+            return Err(MoiError::InvalidVariableIndex(id.0));
+        }
+        let index = checked_c_int(id.0, "variable index")?;
+        let value = normalize_bound(value);
+        bound.validate_pair(value, self.get_var_bound(id, bound.opposite())?)?;
+        let (set, context) = match bound {
+            VariableBound::Lower => (self.api.COPT_SetColLower, "COPT_SetColLower"),
+            VariableBound::Upper => (self.api.COPT_SetColUpper, "COPT_SetColUpper"),
+        };
+        self.check(unsafe { set(self.prob, 1, &index, &value) }, context)?;
+        self.invalidate_solution();
+        Ok(())
+    }
+
     fn add_linear_rows(
         &mut self,
         mut rows: LinearRows,

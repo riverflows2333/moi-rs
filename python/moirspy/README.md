@@ -87,6 +87,11 @@ as low-level APIs and are not required by the built-in COPT path.
 ## Main API
 
 - `Model.addVar(...)` creates one variable.
+- `Var.lb` and `Var.ub` read or change one variable's bounds. COPT/Gurobi
+  Direct models use native getters/setters; Cached models also support edits
+  before backend attach and replay them. Bounds cannot contain NaN or cross
+  each other. A successful edit invalidates previous solution values, while
+  reading bounds preserves them.
 - `Model.addVars(*shape, ...)` creates row-major indexed variables. Scalar
   bounds, types, and names are broadcast; lists provide per-variable values.
 - `Model.addConstr(...)` and `Model.addConstrs(...)` add linear comparisons.

@@ -5,7 +5,62 @@ use moi_core::functions::ScalarFunctionType;
 use moi_core::indices::{ConstrId, VarId};
 use moi_core::sets::ScalarSetType;
 
+#[derive(Clone, Copy, Debug)]
+pub enum VariableBound {
+    Lower,
+    Upper,
+}
+
+impl VariableBound {
+    pub fn validate_pair(self, value: f64, other: f64) -> Result<(), MoiError> {
+        self.validate(value)?;
+        let (lower, upper) = match self {
+            Self::Lower => (value, other),
+            Self::Upper => (other, value),
+        };
+        if lower > upper {
+            return Err(MoiError::InvalidInput(format!(
+                "lower bound {lower} exceeds upper bound {upper}"
+            )));
+        }
+        Ok(())
+    }
+
+    pub fn opposite(self) -> Self {
+        match self {
+            Self::Lower => Self::Upper,
+            Self::Upper => Self::Lower,
+        }
+    }
+
+    pub fn validate(self, value: f64) -> Result<(), MoiError> {
+        if value.is_nan() {
+            Err(MoiError::InvalidInput(
+                "variable bound cannot be NaN".into(),
+            ))
+        } else {
+            Ok(())
+        }
+    }
+}
+
 pub trait ModelLike {
+    /// Read the current native bound, including pending model edits.
+    fn get_var_bound(&mut self, _id: VarId, _bound: VariableBound) -> Result<f64, MoiError> {
+        Err(MoiError::UnsupportedAttribute)
+    }
+
+    /// Change one bound, rejecting NaN and crossed bounds before native writes.
+    fn set_var_bound(
+        &mut self,
+        _id: VarId,
+        bound: VariableBound,
+        value: f64,
+    ) -> Result<(), MoiError> {
+        bound.validate(value)?;
+        Err(MoiError::UnsupportedAttribute)
+    }
+
     /// Compatibility fallback; native backends override this to consume buffers.
     fn add_linear_rows(
         &mut self,
