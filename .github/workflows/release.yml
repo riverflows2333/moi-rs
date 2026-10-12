@@ -198,9 +198,11 @@ jobs:
             exit 1
           fi
           # Keep reruns safe without replacing an existing release's notes.
+          release_title="${GITHUB_REF_NAME##*-v}"
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release edit "$GITHUB_REF_NAME" --title "$release_title"
             gh release upload "$GITHUB_REF_NAME" "${sources[@]}" --clobber
           else
             gh release create "$GITHUB_REF_NAME" "${sources[@]}" \
-              --verify-tag --title "$GITHUB_REF_NAME" --generate-notes
+              --verify-tag --title "$release_title" --generate-notes
           fi
